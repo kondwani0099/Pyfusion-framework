@@ -1,0 +1,50 @@
+# .gitignore
+
+# Exclude virtual environment
+venv/
+old/
+
+# Exclude notes1.md
+notes1.md
+notes.md
+
+
+# Exclude app.py
+app.py
+
+
+# Exclude specific Python files
+main2.py
+
+# Exclude all __pycache__ directories
+# __pycache__/
+
+# Exclude any compiled Python files
+*.pyc
+*.pyo
+*.pyd
+
+# Exclude local configuration files
+*.env
+
+# Exclude logs and other temporary files
+*.log
+*.tmp
+
+# Exclude database files
+*.db
+*.sqlite
+
+# Exclude IDE and editor-specific files
+.idea/
+.vscode/
+
+# Exclude compiled files from web frameworks
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Exclude compiled JavaScript files
+node_modules/
+dist/
