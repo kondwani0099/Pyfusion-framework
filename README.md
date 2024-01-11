@@ -16,7 +16,7 @@ PyFusion is an open-source Python framework designed for the seamless developmen
 
 
 ## Folder structure 
-
+```markdown
 pyfusion/
 |-- assets/
 |   |-- images/
@@ -33,9 +33,9 @@ pyfusion/
 |   |-- styles.css
 |-- webapp.py
 |-- desktop_app.py
+```
 
 
-```markdown
 
 
 ## Getting Started
