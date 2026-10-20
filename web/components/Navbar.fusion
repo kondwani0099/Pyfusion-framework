@@ -1,0 +1,78 @@
+<template>
+  <header class="navbar bg-base-100/90 backdrop-blur border-b border-base-content/10 px-4 lg:px-8">
+    <div class="navbar-start">
+      <div class="dropdown">
+        <button id="menu-dropdown-btn" tabindex="0" class="btn btn-square btn-ghost" aria-label="Open Navigation Menu">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="inline-block w-5 h-5 stroke-current">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+          </svg>
+        </button>
+        <ul tabindex="0" class="menu menu-sm dropdown-content mt-3 z-[50] p-2 shadow-xl bg-base-100 border border-base-content/10 rounded-box w-64">
+          <li class="menu-title"><span>Workspace Tabs</span></li>
+          <li><a onclick="switchTab('overview')">🏠 Overview &amp; Architecture</a></li>
+          <li><a onclick="switchTab('playground')">⚡ Reactive SFC Playground</a></li>
+          <li><a onclick="switchTab('form')">🗄️ Database &amp; Form Tester</a></li>
+          <li><a onclick="switchTab('security')">🛡️ OWASP Security &amp; CLI</a></li>
+          <div class="divider my-1"></div>
+          <li class="menu-title"><span>Live Endpoints</span></li>
+          <li><a href="/counter">🧩 /counter (Standalone SFC)</a></li>
+          <li><a href="/form">📄 /form (Standalone Form)</a></li>
+          <li><a href="/api/db/status" target="_blank">🗄️ /api/db/status (Database JSON)</a></li>
+          <li><a href="/api/security/audit" target="_blank">🛡️ /api/security/audit (OWASP JSON)</a></li>
+        </ul>
+      </div>
+
+      <a href="/" onclick="switchTab('overview'); return false;" class="btn btn-ghost text-xl font-bold tracking-tight gap-2">
+        <span class="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></span>
+        <span>{{ brand }}</span>
+        <span class="badge badge-sm bg-emerald-500/20 text-emerald-400 border-emerald-500/30">{{ version }}</span>
+      </a>
+    </div>
+
+    <!-- Center Navigation Links (Desktop) -->
+    <div class="navbar-center hidden md:flex">
+      <ul class="menu menu-horizontal px-1 gap-1">
+        <li><button id="top-nav-overview" onclick="switchTab('overview')" class="btn btn-sm btn-ghost btn-active">Overview</button></li>
+        <li><button id="top-nav-playground" onclick="switchTab('playground')" class="btn btn-sm btn-ghost">Reactive Playground</button></li>
+        <li><button id="top-nav-form" onclick="switchTab('form')" class="btn btn-sm btn-ghost">Database &amp; Form</button></li>
+        <li><button id="top-nav-security" onclick="switchTab('security')" class="btn btn-sm btn-ghost">OWASP &amp; CLI</button></li>
+      </ul>
+    </div>
+
+    <!-- Right Actions -->
+    <div class="navbar-end gap-2">
+      <button id="server-status-badge" onclick="checkServerHealth()" class="badge badge-outline gap-1.5 py-3 px-3 cursor-pointer hover:bg-base-200 transition" title="Click to verify server, DB &amp; OWASP status">
+        <span id="health-dot" class="w-2 h-2 rounded-full bg-emerald-400"></span>
+        <span id="health-text" class="text-xs font-medium">Live-Reload • OWASP Safe</span>
+      </button>
+
+      <button id="theme-toggle-btn" onclick="toggleTheme()" class="btn btn-square btn-ghost btn-sm" title="Toggle Dark/Light Theme" aria-label="Toggle Theme">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+        </svg>
+      </button>
+
+      <a href="/counter" class="btn btn-sm bg-emerald-600 hover:bg-emerald-500 text-white border-none hidden sm:inline-flex">
+        Open /counter SFC
+      </a>
+    </div>
+  </header>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container" class="toast toast-top toast-end z-50 mt-14"></div>
+</template>
+
+<script>
+props = {
+    "brand": "PyFusion",
+    "version": "v0.4.0"
+}
+</script>
+
+<style>
+div[data-pyfusion-component="Navbar"] {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+}
+</style>

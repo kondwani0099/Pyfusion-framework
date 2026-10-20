@@ -1,0 +1,96 @@
+<template>
+  <section id="section-overview" class="tab-section space-y-12">
+    <div class="hero-glow rounded-3xl p-8 md:p-12 border border-base-content/10 bg-base-100/60 shadow-2xl text-center">
+      <div class="max-w-3xl mx-auto flex flex-col items-center">
+        <img src="/assets/logo.png" alt="PyFusion WebFramework by Kondwani Nyirenda" class="w-32 h-32 md:w-40 md:h-40 object-contain logo-pulse mb-6">
+
+        <div class="flex flex-wrap justify-center gap-2 mb-4">
+          <span class="px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold">
+            ⚡ Vue-Style .fusion SFCs
+          </span>
+          <span class="px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 text-xs font-semibold">
+            🗄️ Built-in SQLite ORM
+          </span>
+          <span class="px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-semibold">
+            🛡️ OWASP Top 10 Hardened
+          </span>
+          <span class="px-3 py-1 rounded-full bg-sky-500/10 border border-sky-500/30 text-sky-400 text-xs font-semibold">
+            🤖 Web • Desktop • Android
+          </span>
+        </div>
+
+        <h1 class="text-3xl md:text-5xl font-extrabold tracking-tight leading-tight mb-3">
+          {{ headline }}
+        </h1>
+        <p class="text-sm font-semibold uppercase tracking-widest text-emerald-400 mb-3">
+          Created by {{ author }}
+        </p>
+        <p class="text-base md:text-lg opacity-80 max-w-2xl mb-8">
+          Build reactive Web, Desktop, and Android apps in Python with Vue-like Single-File Components, automatic browser hot-reload, zero-config SQLite ORM, and built-in OWASP Top 10 security protections.
+        </p>
+
+        <div class="flex flex-wrap items-center justify-center gap-3">
+          <button onclick="switchTab('playground')" class="btn bg-emerald-600 hover:bg-emerald-500 text-white border-none px-6">
+            ⚡ Live Reactive Playground
+          </button>
+          <button onclick="switchTab('form')" class="btn btn-outline px-6">
+            🗄️ Test Database &amp; Form
+          </button>
+          <button onclick="switchTab('security')" class="btn btn-ghost bg-base-200/80 px-5">
+            🛡️ OWASP Security &amp; CLI
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4 Pillar Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+      <div class="card bg-base-100 border border-base-content/10 shadow-lg glass-card cursor-pointer" onclick="switchTab('playground')">
+        <div class="card-body p-6">
+          <div class="text-2xl mb-1">🧩</div>
+          <h3 class="card-title text-base">Vue-Style Components</h3>
+          <p class="text-xs opacity-75">
+            <code>.fusion</code> Single-File Components with <code>f-model</code>, <code>@click</code>, <code>f-if</code>, and computed properties.
+          </p>
+        </div>
+      </div>
+
+      <div class="card bg-base-100 border border-base-content/10 shadow-lg glass-card cursor-pointer" onclick="switchTab('form')">
+        <div class="card-body p-6">
+          <div class="text-2xl mb-1">🗄️</div>
+          <h3 class="card-title text-base">Zero-Config Database ORM</h3>
+          <p class="text-xs opacity-75">
+            Connect with <code>FusionDB("sqlite:///pyfusion.db")</code> and query safely with declarative <code>Model</code> classes.
+          </p>
+        </div>
+      </div>
+
+      <div class="card bg-base-100 border border-base-content/10 shadow-lg glass-card cursor-pointer" onclick="switchTab('security')">
+        <div class="card-body p-6">
+          <div class="text-2xl mb-1">🛡️</div>
+          <h3 class="card-title text-base">OWASP Top 10 Hardened</h3>
+          <p class="text-xs opacity-75">
+            PBKDF2-SHA256 hashing, parameterized SQL, CSRF tokens, IP rate limiting, XSS escaping &amp; security headers.
+          </p>
+        </div>
+      </div>
+
+      <div class="card bg-base-100 border border-base-content/10 shadow-lg glass-card cursor-pointer" onclick="switchTab('security')">
+        <div class="card-body p-6">
+          <div class="text-2xl mb-1">🔄</div>
+          <h3 class="card-title text-base">Instant Browser Reload</h3>
+          <p class="text-xs opacity-75">
+            Any edit to <code>.html</code>, <code>.css</code>, <code>.fusion</code>, or <code>.py</code> automatically refreshes your browser tab.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+</template>
+
+<script>
+props = {
+    "headline": "Fusion WebFramework",
+    "author": "Kondwani Nyirenda"
+}
+</script>

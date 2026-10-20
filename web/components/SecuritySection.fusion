@@ -1,0 +1,142 @@
+<template>
+  <section id="section-security" class="tab-section hidden space-y-8">
+    <div class="text-center max-w-2xl mx-auto">
+      <span class="badge badge-warning badge-outline mb-2">Desktop &amp; Android App Builder • OWASP Top 10 • CLI</span>
+      <h2 class="text-3xl font-bold">{{ heading }}</h2>
+      <p class="text-sm opacity-75 mt-2">
+        Customize your Project Name, Window Title, and Icon (<code>pyfusion.json</code>), save a Desktop App Shortcut (<code>.lnk</code>), build Android <code>.APK</code> / <code>.AAB</code> packages, and inspect OWASP protections.
+      </p>
+    </div>
+
+    <!-- Project Name, Icon & Save Desktop / Android App Studio Card -->
+    <div class="card bg-base-100 border border-indigo-500/30 shadow-xl">
+      <div class="card-body">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <div class="flex items-center gap-3">
+            <img src="/assets/logo.png" alt="Project Icon" class="w-10 h-10 object-contain rounded-lg bg-base-200 p-1" />
+            <div>
+              <h3 class="card-title text-lg">⚙️ Project Name, Icon &amp; Hybrid App Builder</h3>
+              <p class="text-xs opacity-70">Persists to root <code>pyfusion.json</code> and generates <code>desktop/icons/icon.ico</code>, <code>desktop/shortcuts/</code> &amp; <code>mobile/buildozer.spec</code></p>
+            </div>
+          </div>
+          <span id="project-cfg-badge" class="badge badge-success badge-outline">Synced with pyfusion.json</span>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div class="form-control">
+            <label class="label"><span class="label-text text-xs font-semibold">Project Name (Package / .exe Name)</span></label>
+            <input type="text" id="cfg-project-name" value="PyFusion-Studio" class="input input-bordered input-sm w-full" />
+          </div>
+          <div class="form-control">
+            <label class="label"><span class="label-text text-xs font-semibold">Desktop Window &amp; Shortcut Title</span></label>
+            <input type="text" id="cfg-app-title" value="Uniplexity AI - PyFusion" class="input input-bordered input-sm w-full" />
+          </div>
+          <div class="form-control">
+            <label class="label"><span class="label-text text-xs font-semibold">Project Icon Path (.png or .ico)</span></label>
+            <input type="text" id="cfg-icon-path" value="web/assets/logo.png" class="input input-bordered input-sm w-full" />
+          </div>
+        </div>
+
+        <div class="card-actions justify-end mt-4 gap-2 flex-wrap">
+          <button onclick="saveProjectSettings()" class="btn btn-sm btn-outline">💾 Save Name &amp; Icon</button>
+          <button onclick="saveDesktopShortcutFromWeb()" class="btn btn-sm bg-emerald-600 hover:bg-emerald-500 text-white border-none">
+            🖥️ Save Desktop App Shortcut (.lnk)
+          </button>
+          <button onclick="buildAndroidFromWeb('apk')" class="btn btn-sm bg-indigo-600 hover:bg-indigo-500 text-white border-none">
+            📦 Build .APK (Direct Install)
+          </button>
+          <button onclick="buildAndroidFromWeb('aab')" class="btn btn-sm bg-purple-600 hover:bg-purple-500 text-white border-none">
+            🏪 Build .AAB (Play Store)
+          </button>
+          <button onclick="launchMobileFromWeb()" class="btn btn-sm btn-outline border-emerald-500/40 text-emerald-400">
+            🤖 Launch Android Simulator
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live OWASP Security Audit Card -->
+    <div class="card bg-base-100 border border-emerald-500/30 shadow-xl">
+      <div class="card-body">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <div class="flex items-center gap-2">
+            <span class="text-2xl">🛡️</span>
+            <div>
+              <h3 class="card-title text-lg">Active OWASP Top 10 Protections</h3>
+              <p class="text-xs opacity-70">Live report from <code>GET /api/security/audit</code></p>
+            </div>
+          </div>
+          <a href="/api/security/audit" target="_blank" class="btn btn-xs btn-outline">View Raw JSON ↗</a>
+        </div>
+
+        <div id="owasp-audit-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
+          <div class="p-3 rounded-lg bg-base-200/70 border border-base-content/10">
+            <div class="font-bold text-emerald-400 mb-1">A01: Access Control &amp; Path Traversal</div>
+            <p class="opacity-80">Blocks <code>../</code> traversal, dotfiles (<code>.env</code>), and <code>.py</code>/<code>.db</code> exposure; enforces RPC method allowlists.</p>
+          </div>
+          <div class="p-3 rounded-lg bg-base-200/70 border border-base-content/10">
+            <div class="font-bold text-emerald-400 mb-1">A02: Cryptographic Failures</div>
+            <p class="opacity-80"><code>hash_password()</code> uses PBKDF2-HMAC-SHA256 (260k iterations) + random salt &amp; constant-time comparison.</p>
+          </div>
+          <div class="p-3 rounded-lg bg-base-200/70 border border-base-content/10">
+            <div class="font-bold text-emerald-400 mb-1">A03: SQLi &amp; XSS Injection</div>
+            <p class="opacity-80">100% parameterized SQL statements in <code>FusionDB</code> + SQL identifier validation + automatic HTML escaping.</p>
+          </div>
+          <div class="p-3 rounded-lg bg-base-200/70 border border-base-content/10">
+            <div class="font-bold text-emerald-400 mb-1">A04: Rate Limiting &amp; DoS Protection</div>
+            <p class="opacity-80">Sliding-window IP rate limiter (180 req/min) returning <code>429 Retry-After</code> + 2MB max request body size cap.</p>
+          </div>
+          <div class="p-3 rounded-lg bg-base-200/70 border border-base-content/10">
+            <div class="font-bold text-emerald-400 mb-1">A05: Security Headers</div>
+            <p class="opacity-80">Injects <code>X-Content-Type-Options: nosniff</code>, <code>X-Frame-Options: SAMEORIGIN</code>, <code>Referrer-Policy</code>, and <code>Permissions-Policy</code>.</p>
+          </div>
+          <div class="p-3 rounded-lg bg-base-200/70 border border-base-content/10">
+            <div class="font-bold text-emerald-400 mb-1">A07: CSRF Token Verification</div>
+            <p class="opacity-80">HMAC-SHA256 signed CSRF tokens with <code>SameSite=Lax</code> cookie and automatic <code>X-CSRF-Token</code> RPC header.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CLI Commands Reference -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div class="card bg-base-100 border border-base-content/10 shadow p-5 flex flex-row items-center justify-between gap-4">
+        <div>
+          <div class="text-xs opacity-60 mb-1">Scaffold a Database ORM Model</div>
+          <code class="text-sm font-bold text-emerald-400">pyfusion create model Product</code>
+        </div>
+        <button onclick="copyCommand('pyfusion create model Product')" class="btn btn-sm btn-outline">Copy</button>
+      </div>
+
+      <div class="card bg-base-100 border border-base-content/10 shadow p-5 flex flex-row items-center justify-between gap-4">
+        <div>
+          <div class="text-xs opacity-60 mb-1">Check or Migrate Database Tables</div>
+          <code class="text-sm font-bold text-indigo-400">pyfusion db migrate</code>
+        </div>
+        <button onclick="copyCommand('pyfusion db migrate')" class="btn btn-sm btn-outline">Copy</button>
+      </div>
+
+      <div class="card bg-base-100 border border-base-content/10 shadow p-5 flex flex-row items-center justify-between gap-4">
+        <div>
+          <div class="text-xs opacity-60 mb-1">Create a Vue-style Single-File Component (.fusion)</div>
+          <code class="text-sm font-bold text-emerald-400">pyfusion create component UserCard</code>
+        </div>
+        <button onclick="copyCommand('pyfusion create component UserCard')" class="btn btn-sm btn-outline">Copy</button>
+      </div>
+
+      <div class="card bg-base-100 border border-base-content/10 shadow p-5 flex flex-row items-center justify-between gap-4">
+        <div>
+          <div class="text-xs opacity-60 mb-1">Create a Pinia/Vuex-style Reactive Store</div>
+          <code class="text-sm font-bold text-amber-400">pyfusion create store cart</code>
+        </div>
+        <button onclick="copyCommand('pyfusion create store cart')" class="btn btn-sm btn-outline">Copy</button>
+      </div>
+    </div>
+  </section>
+</template>
+
+<script>
+props = {
+    "heading": "Project Name, Icon & OWASP Security"
+}
+</script>

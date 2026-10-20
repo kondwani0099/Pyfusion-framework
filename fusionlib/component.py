@@ -124,6 +124,8 @@ CLIENT_RUNTIME_JS = r"""
       allEls.forEach((el) => {
         if (!el.attributes) return;
         if (el.__pyfusion_bound) return;
+        const ownerComp = el.closest('[data-pyfusion-component]');
+        if (ownerComp && ownerComp !== this.root) return;
 
         // Two-way data binding: f-model / v-model
         const modelProp = el.getAttribute('f-model') || el.getAttribute('v-model');
@@ -180,6 +182,12 @@ CLIENT_RUNTIME_JS = r"""
       const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT, null);
       let textNode;
       while ((textNode = walker.nextNode())) {
+        const parentEl = textNode.parentElement;
+        if (parentEl) {
+          if (parentEl.closest('[f-pre], [v-pre]')) continue;
+          const ownerComp = parentEl.closest('[data-pyfusion-component]');
+          if (ownerComp && ownerComp !== this.root) continue;
+        }
         if (textNode.__pyfusion_tpl === undefined) {
           if (/\{\{.+?\}\}/.test(textNode.nodeValue)) {
             textNode.__pyfusion_tpl = textNode.nodeValue;
@@ -200,6 +208,9 @@ CLIENT_RUNTIME_JS = r"""
       const els = [container, ...container.querySelectorAll('*')];
       els.forEach((el) => {
         if (!el.attributes) return;
+        if (el.closest('[f-pre], [v-pre]')) return;
+        const ownerComp = el.closest('[data-pyfusion-component]');
+        if (ownerComp && ownerComp !== this.root) return;
 
         // f-if / v-if
         const ifExpr = el.getAttribute('f-if') || el.getAttribute('v-if');

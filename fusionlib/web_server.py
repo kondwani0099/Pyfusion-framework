@@ -202,6 +202,33 @@ class PyFusionApp:
                     except Exception as exc:
                         print(f"[PyFusion] Warning: Failed to compile {fname}: {exc}")
 
+    def render_html_with_components(self, html_content: str) -> str:
+        """Expand any registered <ComponentName /> or <ComponentName></ComponentName> tags inside HTML."""
+        self._discover_sfc_components()
+        if not self.components:
+            return html_content
+
+        rendered = html_content
+        for _ in range(4):
+            changed = False
+            for tag_name, comp_cls in list(self.components.items()):
+                pattern = re.compile(
+                    rf"<{tag_name}(\s+[^/>]*?)?\s*(?:/>|></{tag_name}>)",
+                    re.IGNORECASE | re.DOTALL,
+                )
+                if pattern.search(rendered):
+                    def replace_tag(match, cls=comp_cls):
+                        attr_str = match.group(1) or ""
+                        parsed_props = dict(re.findall(r'([a-zA-Z0-9_-]+)=["\']([^"\']*)["\']', attr_str))
+                        instance = cls(**parsed_props)
+                        return instance.render_fragment(registry=self.components)
+
+                    rendered = pattern.sub(replace_tag, rendered)
+                    changed = True
+            if not changed:
+                break
+        return rendered
+
     # --- Vue.js-style Extensibility API ---
 
     def component(self, name: str, component_or_path):
@@ -609,7 +636,7 @@ class CustomHandler(SimpleHTTPRequestHandler):
 
         # OWASP A01 Path Traversal & Sensitive File Protection
         rel_target = "index.html" if parsed_path == "/" else parsed_path
-        is_safe, _ = is_safe_static_path(self.directory, rel_target)
+        is_safe, target_abspath = is_safe_static_path(self.directory, rel_target)
         if not is_safe:
             body = json.dumps({"error": "Forbidden path"}).encode("utf-8")
             try:
@@ -621,6 +648,28 @@ class CustomHandler(SimpleHTTPRequestHandler):
             except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
                 pass
             return
+
+        # Automatically expand Vue-style .fusion components inside .html pages (e.g., web/index.html)
+        if target_abspath.endswith(".html") and os.path.isfile(target_abspath) and self.app:
+            try:
+                with open(target_abspath, "r", encoding="utf-8") as f:
+                    raw_html = f.read()
+                compiled_html = self.app.render_html_with_components(raw_html)
+                body = compiled_html.encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                raw_cookie = self.headers.get("Cookie", "")
+                if "pyfusion_csrf=" not in raw_cookie:
+                    csrf_token = generate_csrf_token(self.app.security.secret_key)
+                    self.send_header("Set-Cookie", f"pyfusion_csrf={csrf_token}; Path=/; SameSite=Lax")
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+                return
+            except Exception as exc:
+                print(f"[PyFusion HTML Component Render Error] {rel_target}: {exc}")
 
         try:
             super().do_GET()

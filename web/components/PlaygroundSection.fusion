@@ -1,0 +1,108 @@
+<template>
+  <section id="section-playground" class="tab-section hidden space-y-8">
+    <div class="text-center max-w-2xl mx-auto">
+      <span class="badge badge-success badge-outline mb-2">Live Python ↔ Browser Reactivity</span>
+      <h2 class="text-3xl font-bold">Vue-Style Single-File Component Playground</h2>
+      <p class="text-sm opacity-75 mt-2">
+        Powered by <code>web/components/PlaygroundSection.fusion</code> &amp; <code>Counter.fusion</code>. Clicking <strong>+1</strong> or <strong>-1</strong> invokes Python methods via <code>/_pyfusion/rpc</code> (protected by CSRF + method allowlisting).
+      </p>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+      <div class="card bg-base-100 shadow-xl border border-base-content/10">
+        <div class="card-body">
+          <div class="flex items-center justify-between">
+            <h3 class="card-title text-xl font-bold">{{ title }}</h3>
+            <span class="badge bg-emerald-600 text-white border-none badge-lg font-semibold">Count: {{ count }}</span>
+          </div>
+
+          <div class="stats bg-base-200/70 shadow-sm my-3">
+            <div class="stat py-3 px-4">
+              <div class="stat-title text-xs">Current State (count)</div>
+              <div class="stat-value text-2xl text-emerald-400">{{ count }}</div>
+            </div>
+            <div class="stat py-3 px-4">
+              <div class="stat-title text-xs">Computed (doubled)</div>
+              <div class="stat-value text-2xl text-indigo-400">{{ doubled }}</div>
+            </div>
+          </div>
+
+          <div class="form-control mt-2">
+            <label class="label">
+              <span class="label-text font-medium">Two-Way Data Binding (<code>f-model="greeting"</code>)</span>
+            </label>
+            <input type="text" f-model="greeting" class="input input-bordered w-full" placeholder="Type to test instant reactivity..." />
+            <p class="mt-2 text-sm opacity-80">
+              Live Value: <span class="font-semibold text-emerald-400">{{ greeting }}</span>
+            </p>
+          </div>
+
+          <div class="card-actions justify-end mt-5 gap-2">
+            <button @click="decrement" class="btn btn-outline btn-sm px-4">-1 (Python RPC)</button>
+            <button @click="increment" class="btn bg-emerald-600 hover:bg-emerald-500 text-white border-none btn-sm px-4">+1 (Python RPC)</button>
+            <button @click="reset" class="btn btn-ghost btn-sm">Reset</button>
+          </div>
+
+          <div f-if="count >= 5" class="alert alert-success mt-4 py-2 text-sm">
+            <span>🎉 Milestone reached! <code>f-if="count &gt;= 5"</code> is active (Count: {{ count }}).</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="code-window p-5 shadow-xl text-xs overflow-x-auto" f-pre>
+        <div class="flex items-center justify-between pb-3 mb-3 border-b border-slate-700">
+          <span class="font-semibold text-emerald-400">web/components/Counter.fusion</span>
+          <a href="/counter" class="btn btn-xs btn-outline border-slate-600 text-slate-200">Open Full Page ↗</a>
+        </div>
+<pre class="leading-relaxed"><code>&lt;template&gt;
+  &lt;div class="card"&gt;
+    &lt;h2&gt;{{ title }}: {{ count }} (Doubled: {{ doubled }})&lt;/h2&gt;
+    &lt;input f-model="greeting" /&gt;
+    &lt;p&gt;{{ greeting }}&lt;/p&gt;
+    &lt;button @click="increment"&gt;+1&lt;/button&gt;
+    &lt;div f-if="count &gt;= 5"&gt;Milestone reached!&lt;/div&gt;
+  &lt;/div&gt;
+&lt;/template&gt;
+
+&lt;script&gt;
+props = {"title": "PyFusion Reactive Counter"}
+
+def data(self):
+    return {"count": 0, "greeting": "Hello from PyFusion SFC!"}
+
+def computed(self):
+    return {"doubled": lambda s: int(s.get("count", 0)) * 2}
+
+def increment(self):
+    self.state.count = int(self.state.count) + 1
+&lt;/script&gt;</code></pre>
+      </div>
+    </div>
+  </section>
+</template>
+
+<script>
+props = {
+    "title": "PyFusion Reactive Counter"
+}
+
+def data(self):
+    return {
+        "count": 0,
+        "greeting": "Hello from PyFusion SFC!"
+    }
+
+def computed(self):
+    return {
+        "doubled": lambda state: int(state.get("count", 0)) * 2
+    }
+
+def increment(self):
+    self.state.count = int(self.state.count) + 1
+
+def decrement(self):
+    self.state.count = int(self.state.count) - 1
+
+def reset(self):
+    self.state.count = 0
+</script>

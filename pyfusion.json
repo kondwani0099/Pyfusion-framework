@@ -16,14 +16,14 @@
     "desktop_entry": "desktop/app.py",
     "desktop_icons_dir": "desktop/icons",
     "desktop_shortcuts_dir": "desktop/shortcuts",
+    "mobile_dir": "mobile",
+    "mobile_entry": "mobile/app.py",
     "web_dir": "web",
     "web_entry": "web/app.py",
     "assets_dir": "web/assets",
     "components_dir": "web/components",
     "models_dir": "web/models",
     "stores_dir": "web/stores",
-    "plugins_dir": "web/plugins",
-    "mobile_dir": "mobile",
-    "mobile_entry": "mobile/app.py"
+    "plugins_dir": "web/plugins"
   }
 }

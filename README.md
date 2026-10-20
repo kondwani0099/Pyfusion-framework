@@ -12,7 +12,7 @@ PyFusion is an open-source, **Vue.js-inspired** Python framework designed for th
 - **CLI Tool (`pyfusion`):** Scaffold projects, components, stores, plugins, and pages, or run live-reload servers directly from the terminal.
 
 ## Screenshots 
-![Alt Text](screenshots/app(3).png)
+![Alt Text](screenshots/pyfusion.png)
 
 
 ## Folder Structure

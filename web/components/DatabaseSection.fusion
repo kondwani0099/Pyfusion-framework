@@ -1,0 +1,97 @@
+<template>
+  <section id="section-form" class="tab-section hidden space-y-8">
+    <div class="text-center max-w-2xl mx-auto">
+      <span class="badge badge-primary badge-outline mb-2">SQLite ORM + PBKDF2-SHA256 Password Hashing</span>
+      <h2 class="text-3xl font-bold">{{ heading }}</h2>
+      <p class="text-sm opacity-75 mt-2">
+        Submitting this form hashes the password with <strong>PBKDF2-HMAC-SHA256 (260,000 iterations)</strong> and saves the record into <code>pyfusion.db</code> using the <code>UserSubmission</code> ORM model.
+      </p>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+      <!-- Form Card -->
+      <div class="card bg-base-100 shadow-xl border border-base-content/10">
+        <div class="card-body">
+          <h3 class="card-title text-lg mb-2">Create User Record (<code>UserSubmission.create</code>)</h3>
+          <form id="fusion-sample-form" action="/submit_form" method="post" onsubmit="handleFormSubmit(event)" class="space-y-4">
+            <div class="form-control">
+              <label class="label" for="username">
+                <span class="label-text font-medium">Username</span>
+              </label>
+              <input type="text" id="username" name="username" value="kondwani" placeholder="Enter username" class="input input-bordered w-full" required />
+            </div>
+
+            <div class="form-control">
+              <label class="label" for="password">
+                <span class="label-text font-medium">Password (Hashed with PBKDF2-SHA256)</span>
+              </label>
+              <input type="password" id="password" name="password" value="pyfusion2026" placeholder="Enter password" class="input input-bordered w-full" required />
+            </div>
+
+            <div class="form-control">
+              <label class="label cursor-pointer justify-start gap-3">
+                <input type="checkbox" id="ajax-mode-toggle" checked class="checkbox checkbox-success checkbox-sm" />
+                <span class="label-text text-sm">Save via AJAX &amp; refresh live database table below</span>
+              </label>
+            </div>
+
+            <div class="card-actions justify-end pt-2 gap-2">
+              <a href="/form" class="btn btn-ghost btn-sm">Open /form Page</a>
+              <button type="submit" id="form-submit-btn" class="btn bg-emerald-600 hover:bg-emerald-500 text-white border-none px-6">
+                Save to Database
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Live Server Response Console -->
+      <div class="card bg-base-100 shadow-xl border border-base-content/10">
+        <div class="card-body">
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="card-title text-lg">Latest SQLite Insert Payload</h3>
+            <span id="form-status-badge" class="badge badge-ghost">Ready</span>
+          </div>
+          <div id="form-response-box" class="code-window p-4 text-xs min-h-[190px] whitespace-pre-wrap">Click "Save to Database" to insert a record into pyfusion.db...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live SQLite Records Table -->
+    <div class="card bg-base-100 shadow-xl border border-base-content/10">
+      <div class="card-body">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <div>
+            <h3 class="card-title text-lg">Live Database Records (<code>user_submissions</code> table in <code>pyfusion.db</code>)</h3>
+            <p class="text-xs opacity-65">Queried via <code>UserSubmission.all()</code> using 100% parameterized SQL.</p>
+          </div>
+          <button onclick="loadDatabaseRecords()" class="btn btn-sm btn-outline">↻ Refresh Table</button>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="table table-zebra table-sm w-full">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Username</th>
+                <th>PBKDF2-SHA256 Password Hash</th>
+                <th>Client IP</th>
+                <th>Created At</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="db-records-tbody">
+              <tr><td colspan="6" class="text-center opacity-60 py-4">Loading records from pyfusion.db...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+</template>
+
+<script>
+props = {
+    "heading": "Database & Form Explorer"
+}
+</script>
