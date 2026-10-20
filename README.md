@@ -1,15 +1,15 @@
 # PyFusion Framework
 
 Description:
-PyFusion is an open-source Python framework designed for the seamless development of both web and desktop applications. Combining the power of Python, Tkinter for desktop GUI, and web technologies for web interfaces, PyFusion aims to simplify the creation of cross-platform applications. In the future, it envisions becoming a comprehensive framework for developing various types of applications.
+PyFusion is an open-source, **Vue.js-inspired** Python framework designed for the seamless development of both reactive web and desktop applications. Combining Python's simplicity with Vue-style **Single-File Components (`.fusion`)**, reactive state (`ref`, `reactive`, `define_store`), and an extensible plugin architecture (`app.use()`), PyFusion empowers developers to build and share components, stores, and plugins on top of the framework.
 
 ## Key Features
 
-- **HTML Integration:** PyFusion seamlessly integrates HTML content within Python applications, offering a flexible approach to web development.
-- **Tkinter GUI:** Leveraging Python's standard GUI library, PyFusion enables the creation of rich and responsive desktop applications.
-- **Web Server:** The framework includes a built-in web server, allowing developers to host web applications directly from their Python environment.
-- **Responsive Design:** PyFusion supports responsive design principles, ensuring a consistent user experience across different devices.
-- **Cross-Platform Vision:** With a future goal of becoming a cross-platform framework, PyFusion aims to support the development of applications for multiple platforms.
+- **Vue-Style Single-File Components (`.fusion`):** Write `<template>`, `<script>`, and `<style scoped>` in a single `.fusion` file or define Python `Component` classes.
+- **Reactive Directives & Two-Way Binding:** Built-in support for `{{ expr }}`, `f-model` / `v-model`, `@click` / `@submit.prevent`, `f-if` / `v-if`, `f-for` / `v-for`, and `:attr` bindings synced automatically between the browser and Python backend via RPC.
+- **Extensible Plugin & Store Ecosystem:** Build on top of PyFusion using `create_app()`, `app.use(plugin)`, `app.component(name, Comp)`, and Pinia-like `define_store()`.
+- **Tkinter Desktop GUI:** Leveraging Python's standard GUI library, PyFusion enables the creation of desktop applications with integrated navigation.
+- **CLI Tool (`pyfusion`):** Scaffold projects, components, stores, plugins, and pages, or run live-reload servers directly from the terminal.
 
 ## Screenshots 
 ![Alt Text](screenshots/app(3).png)
@@ -20,103 +20,154 @@ PyFusion is an open-source Python framework designed for the seamless developmen
 pyfusion/
 |-- assets/
 |   |-- images/
-|       |-- home.png
-|       |-- settings.png
+|-- components/
+|   |-- Counter.fusion
 |-- fusionlib/
+|   |-- __init__.py
+|   |-- __main__.py
+|   |-- cli.py
+|   |-- component.py
 |   |-- gui_framework.py
+|   |-- navigation_manager.py
+|   |-- reactivity.py
 |   |-- ui_components.py
 |   |-- web_server.py
-|-- screens/
-|   |-- settings_page.py
 |-- web/
 |   |-- index.html
+|   |-- form.html
 |   |-- styles.css
+|-- pyfusion.py
+|-- pyproject.toml
 |-- webapp.py
 |-- desktop_app.py
 ```
 
-
-
-
 ## Getting Started
-
-Follow these steps to set up a virtual environment and install project dependencies.
-
-### Prerequisites
-
-- [Python](https://www.python.org/) (version 3.x recommended)
 
 ### Setup
 
-1. Clone the repository:
-
+1. Clone the repository and navigate into it:
    ```bash
    git clone https://github.com/kondwani0099/pyfusion-framework.git
-   ```
-
-2. Navigate to the project directory:
-
-   ```bash
    cd pyfusion-framework
    ```
 
-3. Create a virtual environment:
-
-   ```bash
-   python -m venv venv
-   ```
-
-   If you're using Python 3.3 or newer, you can use the `python` command. If you're using Python 3.6 or newer, `venv` is included by default.
-
-   ```bash
-   python3 -m venv venv
-   ```
-
-4. Activate the virtual environment:
-
-   - On Windows:
-
-     ```bash
-     source venv/Scripts/activate
-     ```
-
-   - On macOS and Linux:
-
-     ```bash
-     source venv/bin/activate
-     ```
-
-   After activation, your terminal prompt should change to indicate that you are now working within the virtual environment.
-
-5. Install project dependencies:
-
+2. Install dependencies and the `pyfusion` CLI:
    ```bash
    pip install -r requirements.txt
+   pip install -e .
    ```
-# If you are using docker 
-To build and run your Docker image, use the following commands in the terminal:
 
-   ```bash
-   docker build -t your-image-name
-   docker run -p 5000:5000 your-image-name
-   ```
-Replace your-image-name with a name for your Docker image.
-Make sure Docker is installed on your system before running these commands.
+---
 
-### Usage
+## CLI Commands (`pyfusion`)
 
-Developers can use PyFusion to build applications with a unified codebase for both desktop and web interfaces. The framework facilitates the creation of interactive forms, dynamic content, and seamless navigation between pages, laying the foundation for a versatile application development experience.
+Run commands with `pyfusion` (or `python pyfusion.py` / `python -m fusionlib`):
 
-## Contribution
+```bash
+# Scaffold a Vue-style Single-File Component (components/UserCard.fusion)
+pyfusion create component UserCard
 
-PyFusion is an open-source project, and contributions from the community are highly encouraged. Developers can contribute by reporting issues, suggesting improvements, or submitting pull requests. The project follows the MIT License, allowing for free use, modification, and distribution.
+# Scaffold a Pinia/Vuex-style reactive store (stores/cart_store.py)
+pyfusion create store cart
 
+# Scaffold a reusable PyFusion plugin (plugins/auth_plugin.py)
+pyfusion create plugin auth
+
+# Scaffold a static web page (web/dashboard.html & web/dashboard.css)
+pyfusion create page dashboard
+
+# Initialize a brand-new PyFusion project folder
+pyfusion init my_new_app
+
+# Run the web server with live-reload (watches .py, .fusion, .html, .css)
+pyfusion run web --port 5000 --reload --open
+
+# Run the desktop GUI application
+pyfusion run desktop --page index --title "My PyFusion App"
+
+# Run both web server and desktop GUI simultaneously
+pyfusion run dev --port 5000
+
+# Inspect all registered routes, reactive components, and static pages
+pyfusion routes
+```
+
+---
+
+## Building on Top of PyFusion (Vue.js Style)
+
+### 1. Single-File Components (`components/Counter.fusion`)
+Just like `.vue` files in Vue.js, `.fusion` files encapsulate HTML template, Python reactive logic, and scoped CSS:
+
+```html
+<template>
+  <div class="card bg-base-100 shadow-xl p-6">
+    <h2>{{ title }}: {{ count }} (Doubled: {{ doubled }})</h2>
+    <input type="text" f-model="greeting" class="input input-bordered" />
+    <p>{{ greeting }}</p>
+    <button @click="increment" class="btn btn-primary">+1</button>
+  </div>
+</template>
+
+<script>
+props = {"title": "Reactive Counter"}
+
+def data(self):
+    return {"count": 0, "greeting": "Hello PyFusion!"}
+
+def computed(self):
+    return {"doubled": lambda state: int(state["count"]) * 2}
+
+def increment(self):
+    self.state.count = int(self.state.count) + 1
+</script>
+
+<style scoped>
+.card { border-radius: 12px; }
+</style>
+```
+
+### 2. Python Class Components, Stores & Plugins (`webapp.py`)
+```python
+from fusionlib import create_app, Component, define_store, FusionPlugin
+
+# Define a Pinia-style reactive store
+counter_store = define_store(
+    "counter",
+    state=lambda: {"count": 0},
+    getters={"doubled": lambda s: s["count"] * 2},
+    actions={"increment": lambda s: s.__setitem__("count", s["count"] + 1)},
+)
+
+# Define a reusable Plugin
+class LoggerPlugin(FusionPlugin):
+    name = "logger"
+    def install(self, app, **options):
+        @app.get("/api/logs")
+        def get_logs(request):
+            return {"plugin": self.name, "status": "enabled"}
+
+# Create and configure the application (just like Vue's createApp)
+app = (
+    create_app()
+    .use(LoggerPlugin())
+    .store(counter_store)
+    .mount("/counter", "components/Counter.fusion", title="Counter")
+)
+
+if __name__ == "__main__":
+    app.run(host="localhost", port=5000, open_browser=True)
+```
+
+---
+
+## Docker Support
+To build and run your Docker image:
+```bash
+docker build -t pyfusion-app .
+docker run -p 5000:5000 pyfusion-app
+```
 
 ## License
-
 This project is licensed under the [MIT License](LICENSE).
-
-
-
-
-

@@ -1,0 +1,83 @@
+<template>
+  <div class="min-h-screen bg-base-300 text-base-content flex flex-col">
+    <!-- Top Navbar -->
+    <div class="navbar bg-base-100 border-b border-base-content/10 px-4 lg:px-8">
+      <div class="flex-1">
+        <a href="/" class="btn btn-ghost text-xl font-bold gap-2">
+          <span class="w-3 h-3 rounded-full bg-emerald-500"></span>
+          <span>PyFusion</span>
+        </a>
+      </div>
+      <div class="flex-none gap-2">
+        <a href="/" class="btn btn-sm btn-ghost">← Back to Landing Page</a>
+        <a href="/form" class="btn btn-sm btn-outline">Form Page</a>
+      </div>
+    </div>
+
+    <div class="flex-1 flex items-center justify-center p-6">
+      <div class="card bg-base-100 shadow-2xl border border-base-content/10 w-full max-w-lg">
+        <div class="card-body">
+          <div class="flex items-center justify-between">
+            <h1 class="card-title text-2xl font-bold">{{ title }}</h1>
+            <span class="badge bg-emerald-600 text-white border-none badge-lg">Count: {{ count }}</span>
+          </div>
+
+          <p class="text-sm opacity-75">
+            Doubled (Computed in Python): <strong class="text-emerald-400">{{ doubled }}</strong>
+          </p>
+
+          <!-- Two-way binding with f-model (or v-model) -->
+          <div class="form-control mt-3">
+            <label class="label"><span class="label-text font-medium">Live Greeting (<code>f-model="greeting"</code>)</span></label>
+            <input type="text" f-model="greeting" class="input input-bordered w-full" placeholder="Type something..." />
+            <p class="mt-2 text-sm">Preview: <span class="font-semibold text-emerald-400">{{ greeting }}</span></p>
+          </div>
+
+          <!-- Event bindings (@click) calling Python methods on the backend -->
+          <div class="card-actions justify-end mt-5 gap-2">
+            <button @click="decrement" class="btn btn-outline btn-sm px-4">-1</button>
+            <button @click="increment" class="btn bg-emerald-600 hover:bg-emerald-500 text-white border-none btn-sm px-4">+1</button>
+            <button @click="reset" class="btn btn-ghost btn-sm">Reset</button>
+          </div>
+
+          <!-- Conditional rendering with f-if -->
+          <div f-if="count >= 5" class="alert alert-success mt-4 py-2 text-sm">
+            <span>🎉 Milestone reached! Count is {{ count }} or higher.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script>
+props = {
+    "title": "PyFusion Reactive Counter"
+}
+
+def data(self):
+    return {
+        "count": 0,
+        "greeting": "Hello from PyFusion SFC!"
+    }
+
+def computed(self):
+    return {
+        "doubled": lambda state: int(state.get("count", 0)) * 2
+    }
+
+def increment(self):
+    self.state.count = int(self.state.count) + 1
+
+def decrement(self):
+    self.state.count = int(self.state.count) - 1
+
+def reset(self):
+    self.state.count = 0
+</script>
+
+<style scoped>
+.card {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+</style>

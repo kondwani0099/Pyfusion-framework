@@ -1,7 +1,8 @@
-certifi==2023.11.17
-charset-normalizer==3.3.2
-idna==3.6
-Pillow==9.5.0
-requests==2.31.0
-tkhtmlview==0.2.0
-urllib3==2.1.0
+certifi>=2023.11.17
+charset-normalizer>=3.3.2
+idna>=3.6
+Pillow>=10.0.0
+pywebview>=5.0.0
+requests>=2.31.0
+tkhtmlview>=0.2.0
+urllib3>=2.1.0

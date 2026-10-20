@@ -1,15 +1,72 @@
-/* web/styles.css */
+/* web/styles.css - PyFusion Modern Design System */
 
-body {
-    font-family: 'Poppins', sans-serif;
-    text-align: center;
-    /* background-color: #f0f0f0; */
+:root {
+    --pf-primary: #10b981;
+    --pf-primary-dark: #059669;
+    --pf-accent: #6366f1;
+    --pf-glow: rgba(16, 185, 129, 0.22);
 }
 
-h2 {
-    color: #333;
-    padding: 20px;
-    background-color: #fff;
-    border-radius: 8px;
-    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+* {
+    box-sizing: border-box;
+}
+
+html {
+    scroll-behavior: smooth;
+}
+
+body {
+    font-family: 'Poppins', -apple-system, BlinkMacSystemFont, sans-serif;
+    margin: 0;
+    padding-bottom: 4.5rem;
+}
+
+.hero-glow {
+    background: radial-gradient(circle at 50% 20%, rgba(16, 185, 129, 0.18), rgba(99, 102, 241, 0.12) 45%, transparent 75%);
+}
+
+.glass-card {
+    background: rgba(255, 255, 255, 0.04);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.glass-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(16, 185, 129, 0.4);
+    box-shadow: 0 12px 30px -10px rgba(0, 0, 0, 0.25);
+}
+
+.logo-pulse {
+    filter: drop-shadow(0 8px 24px rgba(16, 185, 129, 0.3));
+    transition: transform 0.3s ease;
+}
+
+.logo-pulse:hover {
+    transform: scale(1.04);
+}
+
+.code-window {
+    background: #0f172a;
+    color: #e2e8f0;
+    border-radius: 0.75rem;
+    border: 1px solid rgba(148, 163, 184, 0.15);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.tab-section {
+    animation: fadeIn 0.22s ease-out;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }

@@ -33,6 +33,8 @@ main2.py
 
 # Exclude database files
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
 
 # Exclude IDE and editor-specific files
@@ -44,7 +46,18 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+*.egg-info/
+build/
+env/
+.venv/
+assets/.webview_data/
+
+# Exclude local machine shortcuts and launchers
+*.lnk
+Launch *.vbs
+Launch *.bat
 
 # Exclude compiled JavaScript files
 node_modules/
 dist/
+

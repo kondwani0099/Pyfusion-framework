@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyfusion-framework"
+version = "0.4.0"
+description = "Open-source Python framework for building hybrid web and desktop applications."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.8"
+dependencies = [
+    "Pillow>=10.0.0",
+    "pywebview>=5.0.0",
+    "requests>=2.31.0",
+    "tkhtmlview>=0.2.0",
+]
+
+[project.scripts]
+pyfusion = "fusionlib.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["fusionlib*"]
+
+[tool.setuptools.package-data]
+fusionlib = ["icons/*.png"]

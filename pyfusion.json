@@ -1,0 +1,14 @@
+{
+  "project_name": "PyFusion-Studio",
+  "app_title": "Uniplexity AI - PyFusion",
+  "author": "Kondwani Nyirenda",
+  "version": "0.4.0",
+  "icon": "web/logo.png",
+  "ico_path": "assets/icon.ico",
+  "theme_color": "#10b981",
+  "engine": "tk",
+  "host": "localhost",
+  "port": 5000,
+  "width": 1120,
+  "height": 760
+}
