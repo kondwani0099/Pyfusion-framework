@@ -1,0 +1,51 @@
+name: Build Android APK & AAB (Uniplexity AI - PyFusion)
+
+on:
+  workflow_dispatch:
+    inputs:
+      artifact_format:
+        description: 'Android package format (apk, aab, or both)'
+        required: true
+        default: 'both'
+        type: choice
+        options:
+          - apk
+          - aab
+          - both
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Build Android .APK (Direct Install)
+        if: ${{ github.event.inputs.artifact_format != 'aab' }}
+        uses: ArtemSBulgakov/buildozer-action@v1
+        with:
+          workdir: mobile
+          buildozer_version: stable
+          command: buildozer android debug
+
+      - name: Upload Android .APK Artifact
+        if: ${{ github.event.inputs.artifact_format != 'aab' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: pyfusionstudio-debug-apk
+          path: mobile/dist/*.apk
+
+      - name: Build Android .AAB (Google Play Store Bundle)
+        if: ${{ github.event.inputs.artifact_format == 'aab' || github.event.inputs.artifact_format == 'both' }}
+        uses: ArtemSBulgakov/buildozer-action@v1
+        with:
+          workdir: mobile
+          buildozer_version: stable
+          command: buildozer android release
+
+      - name: Upload Android .AAB Artifact
+        if: ${{ github.event.inputs.artifact_format == 'aab' || github.event.inputs.artifact_format == 'both' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: pyfusionstudio-release-aab
+          path: mobile/dist/*.aab

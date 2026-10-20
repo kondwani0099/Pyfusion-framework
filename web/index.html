@@ -396,8 +396,11 @@ def increment(self):
                         <button onclick="saveDesktopShortcutFromWeb()" class="btn btn-sm bg-emerald-600 hover:bg-emerald-500 text-white border-none">
                             🖥️ Save Desktop App Shortcut (.lnk)
                         </button>
-                        <button onclick="buildAndroidFromWeb()" class="btn btn-sm bg-indigo-600 hover:bg-indigo-500 text-white border-none">
-                            📱 Build Android APK Config
+                        <button onclick="buildAndroidFromWeb('apk')" class="btn btn-sm bg-indigo-600 hover:bg-indigo-500 text-white border-none">
+                            📦 Build .APK (Direct Install)
+                        </button>
+                        <button onclick="buildAndroidFromWeb('aab')" class="btn btn-sm bg-purple-600 hover:bg-purple-500 text-white border-none">
+                            🏪 Build .AAB (Play Store)
                         </button>
                         <button onclick="launchMobileFromWeb()" class="btn btn-sm btn-outline border-emerald-500/40 text-emerald-400">
                             🤖 Launch Android Simulator
@@ -747,7 +750,7 @@ def increment(self):
             }
         }
 
-        async function buildAndroidFromWeb() {
+        async function buildAndroidFromWeb(format = 'both') {
             const project_name = document.getElementById('cfg-project-name').value;
             const app_title = document.getElementById('cfg-app-title').value;
             const icon = document.getElementById('cfg-icon-path').value;
@@ -756,12 +759,12 @@ def increment(self):
                 const res = await fetch('/api/project/build-android', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ project_name, app_title, icon })
+                    body: JSON.stringify({ project_name, app_title, icon, format })
                 });
                 const data = await res.json();
                 const info = data.android_info || {};
-                badge.textContent = `✓ Android APK Ready (${info.package_name})`;
-                showToast(`Generated mobile/buildozer.spec & mobile/capacitor.config.json!`);
+                badge.textContent = `✓ Android .${format.toUpperCase()} Ready (${info.package_name})`;
+                showToast(`Configured Android .${format.toUpperCase()} in mobile/buildozer.spec & GitHub Actions CI!`);
             } catch (e) {
                 showToast('Failed to generate Android project', 'error');
             }

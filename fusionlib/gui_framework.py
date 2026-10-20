@@ -409,27 +409,30 @@ class HTMLAppWindow:
                 f"• Desktop Shortcuts: {', '.join(shortcuts_list)}",
             )
 
-        def build_android_config():
+        def build_android_config(fmt="both"):
             apply_and_save_config()
-            res = generate_android_project()
-            status_badge.configure(text="✓ Android APK Ready!")
-            log_var.set(f"✓ Generated Android APK project ({res['package_name']}): {res['buildozer_spec']}")
+            res = generate_android_project(artifact_format=fmt)
+            status_badge.configure(text=f"✓ Android {res['format']} Ready!")
+            log_var.set(f"✓ Configured Android {res['format']} ({res['package_name']}): {res['buildozer_spec']}")
             messagebox.showinfo(
-                "Android Project Synced!",
-                f"Generated Android APK & WebView files for '{res['app_title']}':\n\n"
+                f"Android {res['format']} Synced!",
+                f"Configured Android {res['format']} for '{res['app_title']}':\n\n"
+                f"• Debug Format: .{res['debug_artifact'].lower()} (Direct Phone Install)\n"
+                f"• Release Format: .{res['release_artifact'].lower()} (Google Play Store)\n"
                 f"• Buildozer Spec: {res['buildozer_spec']}\n"
-                f"• Capacitor Config: {res['capacitor_config']}\n"
-                f"• Android Main: {res['android_main']}",
+                f"• Docker Builder: {res['dockerfile_android']}\n"
+                f"• GitHub Actions CI: {res['github_workflow']}",
             )
 
         btn_row = tk.Frame(card.body, bg=WebTheme.BG_BASE_100)
         btn_row.pack(fill=tk.X)
 
-        WebButton(btn_row, text="📁 Browse Icon...", variant="outline", command=browse_icon).pack(side=tk.LEFT, padx=(0, 8))
-        WebButton(btn_row, text="💾 Save Name & Icon", variant="indigo", command=apply_and_save_config).pack(side=tk.LEFT, padx=(0, 8))
-        WebButton(btn_row, text="🖥️ Save Desktop Shortcut (.lnk)", variant="primary", command=save_desktop_app_shortcut).pack(side=tk.LEFT, padx=(0, 8))
-        WebButton(btn_row, text="📱 Build Android APK Config", variant="outline", command=build_android_config).pack(side=tk.LEFT, padx=(0, 8))
-        WebButton(btn_row, text="🤖 Open Android Simulator", variant="ghost", command=lambda: launch_mobile_detached()).pack(side=tk.LEFT)
+        WebButton(btn_row, text="📁 Browse Icon...", variant="outline", command=browse_icon).pack(side=tk.LEFT, padx=(0, 6))
+        WebButton(btn_row, text="💾 Save Name & Icon", variant="indigo", command=apply_and_save_config).pack(side=tk.LEFT, padx=(0, 6))
+        WebButton(btn_row, text="🖥️ Save Desktop (.lnk)", variant="primary", command=save_desktop_app_shortcut).pack(side=tk.LEFT, padx=(0, 6))
+        WebButton(btn_row, text="📦 Build .APK", variant="outline", command=lambda: build_android_config("apk")).pack(side=tk.LEFT, padx=(0, 6))
+        WebButton(btn_row, text="🏪 Build .AAB", variant="outline", command=lambda: build_android_config("aab")).pack(side=tk.LEFT, padx=(0, 6))
+        WebButton(btn_row, text="🤖 Android Simulator", variant="ghost", command=lambda: launch_mobile_detached()).pack(side=tk.LEFT)
 
     def _render_counter_view(self):
         self._clear_workspace()

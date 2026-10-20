@@ -368,7 +368,8 @@ class PyFusionApp:
                     updates[k] = str(data[k]).strip()
             if updates:
                 save_project_config(updates)
-            android_info = generate_android_project()
+            fmt = str(data.get("format", "both")).strip().lower()
+            android_info = generate_android_project(artifact_format=fmt)
             return {"status": "generated", "android_info": android_info}
 
         @self.route("/api/project/launch-mobile", methods=["POST"])
@@ -571,16 +572,19 @@ class CustomHandler(SimpleHTTPRequestHandler):
                 status=500,
             )
 
-        self.send_response(resp.status)
-        self.send_header("Content-Type", resp.content_type)
-        self.send_header("Content-Length", str(len(resp.body)))
-        if "pyfusion_csrf" not in req.cookies:
-            csrf_token = generate_csrf_token(self.app.security.secret_key)
-            self.send_header("Set-Cookie", f"pyfusion_csrf={csrf_token}; Path=/; SameSite=Lax")
-        for k, v in resp.headers.items():
-            self.send_header(k, v)
-        self.end_headers()
-        self.wfile.write(resp.body)
+        try:
+            self.send_response(resp.status)
+            self.send_header("Content-Type", resp.content_type)
+            self.send_header("Content-Length", str(len(resp.body)))
+            if "pyfusion_csrf" not in req.cookies:
+                csrf_token = generate_csrf_token(self.app.security.secret_key)
+                self.send_header("Set-Cookie", f"pyfusion_csrf={csrf_token}; Path=/; SameSite=Lax")
+            for k, v in resp.headers.items():
+                self.send_header(k, v)
+            self.end_headers()
+            self.wfile.write(resp.body)
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+            pass
         return True
 
     def do_GET(self):
@@ -608,14 +612,20 @@ class CustomHandler(SimpleHTTPRequestHandler):
         is_safe, _ = is_safe_static_path(self.directory, rel_target)
         if not is_safe:
             body = json.dumps({"error": "Forbidden path"}).encode("utf-8")
-            self.send_response(403)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+            try:
+                self.send_response(403)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+                pass
             return
 
-        super().do_GET()
+        try:
+            super().do_GET()
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+            pass
 
     def do_POST(self):
         if self._dispatch_route("POST"):
@@ -625,11 +635,14 @@ class CustomHandler(SimpleHTTPRequestHandler):
         post_data = self.rfile.read(content_length).decode("utf-8", errors="replace")
 
         response_bytes = json.dumps({"status": "received", "data": escape_html(post_data)}).encode("utf-8")
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(response_bytes)))
-        self.end_headers()
-        self.wfile.write(response_bytes)
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(response_bytes)))
+            self.end_headers()
+            self.wfile.write(response_bytes)
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+            pass
 
     def do_DELETE(self):
         if self._dispatch_route("DELETE"):

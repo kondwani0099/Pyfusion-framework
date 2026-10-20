@@ -286,12 +286,15 @@ def create_desktop_shortcut(target_dir: str = None) -> Dict[str, Any]:
     }
 
 
-def generate_android_project(base_dir: str = None) -> Dict[str, Any]:
+def generate_android_project(base_dir: str = None, artifact_format: str = "both") -> Dict[str, Any]:
     """
-    Generate & sync Android APK build configurations inside `mobile/` from root `pyfusion.json`:
-      1. `mobile/buildozer.spec` — python-for-android WebView bootstrap bundling Python 3 + SQLite + PyFusion
+    Generate & sync Android `.apk` (direct install) and `.aab` (Google Play Store App Bundle)
+    build configurations inside `mobile/` from root `pyfusion.json`:
+      1. `mobile/buildozer.spec` — python-for-android WebView bootstrap supporting both `apk` and `aab`
       2. `mobile/capacitor.config.json` — Capacitor Android Studio hybrid wrapper config
       3. `mobile/main.py` — Android entry point required by Buildozer (`--android-webview`)
+      4. `mobile/Dockerfile.android` — Containerized compiler to build .apk / .aab on Windows
+      5. `.github/workflows/android-apk-aab.yml` — Automated GitHub Actions workflow building .apk & .aab
     """
     root = base_dir or os.getcwd()
     cfg = load_project_config(root)
@@ -302,10 +305,16 @@ def generate_android_project(base_dir: str = None) -> Dict[str, Any]:
     pkg_slug = "".join(c.lower() for c in project_name if c.isalnum()) or "pyfusionapp"
     app_id = f"org.pyfusion.{pkg_slug}"
 
-    mobile_dir = os.path.abspath(os.path.join(root, cfg.get("paths", {}).get("mobile_dir", "mobile")))
-    os.makedirs(mobile_dir, exist_ok=True)
+    fmt = (artifact_format or "both").lower()
+    release_artifact = "aab" if fmt in ("aab", "both") else "apk"
+    debug_artifact = "apk" if fmt in ("apk", "both") else "aab"
 
-    # 1. Buildozer spec (python-for-android WebView bootstrap)
+    mobile_dir = os.path.abspath(os.path.join(root, cfg.get("paths", {}).get("mobile_dir", "mobile")))
+    dist_dir = os.path.join(mobile_dir, "dist")
+    os.makedirs(mobile_dir, exist_ok=True)
+    os.makedirs(dist_dir, exist_ok=True)
+
+    # 1. Buildozer spec (python-for-android WebView bootstrap for both APK & AAB)
     buildozer_spec_path = os.path.join(mobile_dir, "buildozer.spec")
     buildozer_content = f"""[app]
 title = {app_title}
@@ -313,29 +322,32 @@ package.name = {pkg_slug}
 package.domain = org.pyfusion
 source.dir = ..
 source.include_exts = py,png,jpg,ico,html,css,js,fusion,json
-source.exclude_dirs = env,venv,.git,__pycache__,desktop/dist,desktop/shortcuts
+source.exclude_dirs = env,venv,.git,__pycache__,desktop/dist,desktop/shortcuts,mobile/dist
 version = {version}
 requirements = python3,sqlite3,pyjnius,android
 icon.filename = %(source.dir)s/{icon_rel}
 orientation = portrait
 fullscreen = 0
 
-# Android WebView bootstrap settings
+# Android WebView bootstrap & Artifact Formats (.apk and .aab)
 p4a.bootstrap = webview
 p4a.port = {cfg.get('port', 5000)}
 android.permissions = INTERNET,ACCESS_NETWORK_STATE
 android.api = 34
 android.minapi = 24
 android.archs = arm64-v8a, armeabi-v7a
+android.release_artifact = {release_artifact}
+android.debug_artifact = {debug_artifact}
 
 [buildozer]
 log_level = 2
 warn_on_root = 1
+bin_dir = ./dist
 """
     with open(buildozer_spec_path, "w", encoding="utf-8") as f:
         f.write(buildozer_content)
 
-    # 2. Capacitor config (for Android Studio / Gradle APK wrapper)
+    # 2. Capacitor config (for Android Studio / Gradle assembleDebug (.apk) & bundleRelease (.aab))
     cap_config_path = os.path.join(mobile_dir, "capacitor.config.json")
     cap_config = {
         "appId": app_id,
@@ -349,6 +361,9 @@ warn_on_root = 1
         "android": {
             "backgroundColor": "#0b1120",
             "allowMixedContent": True,
+            "buildOptions": {
+                "releaseType": "AAB" if release_artifact == "aab" else "APK",
+            },
         },
     }
     with open(cap_config_path, "w", encoding="utf-8") as f:
@@ -368,12 +383,91 @@ warn_on_root = 1
             f"    run_native_android_webview(port={cfg.get('port', 5000)})\n"
         )
 
+    # 4. Dockerfile.android for building APK & AAB on Windows via Docker
+    dockerfile_android_path = os.path.join(mobile_dir, "Dockerfile.android")
+    with open(dockerfile_android_path, "w", encoding="utf-8") as f:
+        f.write(
+            "FROM kivy/buildozer:latest\n"
+            "USER root\n"
+            "WORKDIR /home/user/hostcwd\n"
+            "COPY . /home/user/hostcwd\n"
+            "WORKDIR /home/user/hostcwd/mobile\n"
+            "# Build Debug .APK: docker run --rm -v ${PWD}:/home/user/hostcwd -w /home/user/hostcwd/mobile kivy/buildozer android debug\n"
+            "# Build Release .AAB: docker run --rm -v ${PWD}:/home/user/hostcwd -w /home/user/hostcwd/mobile kivy/buildozer android release\n"
+            'CMD ["buildozer", "android", "debug"]\n'
+        )
+
+    # 5. GitHub Actions CI workflow to automatically compile both .APK and .AAB on push
+    workflow_dir = os.path.join(root, ".github", "workflows")
+    os.makedirs(workflow_dir, exist_ok=True)
+    workflow_path = os.path.join(workflow_dir, "android-apk-aab.yml")
+    workflow_yaml = f"""name: Build Android APK & AAB ({app_title})
+
+on:
+  workflow_dispatch:
+    inputs:
+      artifact_format:
+        description: 'Android package format (apk, aab, or both)'
+        required: true
+        default: 'both'
+        type: choice
+        options:
+          - apk
+          - aab
+          - both
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Build Android .APK (Direct Install)
+        if: ${{{{ github.event.inputs.artifact_format != 'aab' }}}}
+        uses: ArtemSBulgakov/buildozer-action@v1
+        with:
+          workdir: mobile
+          buildozer_version: stable
+          command: buildozer android debug
+
+      - name: Upload Android .APK Artifact
+        if: ${{{{ github.event.inputs.artifact_format != 'aab' }}}}
+        uses: actions/upload-artifact@v4
+        with:
+          name: {pkg_slug}-debug-apk
+          path: mobile/dist/*.apk
+
+      - name: Build Android .AAB (Google Play Store Bundle)
+        if: ${{{{ github.event.inputs.artifact_format == 'aab' || github.event.inputs.artifact_format == 'both' }}}}
+        uses: ArtemSBulgakov/buildozer-action@v1
+        with:
+          workdir: mobile
+          buildozer_version: stable
+          command: buildozer android release
+
+      - name: Upload Android .AAB Artifact
+        if: ${{{{ github.event.inputs.artifact_format == 'aab' || github.event.inputs.artifact_format == 'both' }}}}
+        uses: actions/upload-artifact@v4
+        with:
+          name: {pkg_slug}-release-aab
+          path: mobile/dist/*.aab
+"""
+    with open(workflow_path, "w", encoding="utf-8") as f:
+        f.write(workflow_yaml)
+
     return {
         "app_title": app_title,
         "package_name": app_id,
+        "format": fmt.upper(),
+        "release_artifact": release_artifact.upper(),
+        "debug_artifact": debug_artifact.upper(),
         "buildozer_spec": buildozer_spec_path,
         "capacitor_config": cap_config_path,
         "android_main": android_main_path,
+        "dockerfile_android": dockerfile_android_path,
+        "github_workflow": workflow_path,
+        "dist_dir": dist_dir,
     }
 
 

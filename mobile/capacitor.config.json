@@ -9,6 +9,9 @@
   },
   "android": {
     "backgroundColor": "#0b1120",
-    "allowMixedContent": true
+    "allowMixedContent": true,
+    "buildOptions": {
+      "releaseType": "AAB"
+    }
   }
 }

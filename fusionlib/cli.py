@@ -630,12 +630,16 @@ def cmd_build(args):
     if args.target == "exe":
         dist_exe = build_standalone_exe(onefile=True)
         print(f"[PyFusion Build] Standalone executable saved at: {dist_exe}")
-    elif args.target == "android":
-        info = generate_android_project()
-        print(f"[PyFusion Android] Synced Android APK & WebView project for '{info['app_title']}' ({info['package_name']})!")
+    elif args.target in ("android", "apk", "aab"):
+        fmt = args.target if args.target in ("apk", "aab") else getattr(args, "format", "both")
+        info = generate_android_project(artifact_format=fmt)
+        print(f"[PyFusion Android] Synced Android {info['format']} project for '{info['app_title']}' ({info['package_name']})!")
+        print(f"  - Debug Format     : .{info['debug_artifact'].lower()} (Direct Device Install)")
+        print(f"  - Release Format   : .{info['release_artifact'].lower()} (Google Play Store Bundle)")
         print(f"  - Buildozer Spec   : {info['buildozer_spec']}")
         print(f"  - Capacitor Config : {info['capacitor_config']}")
-        print(f"  - Android Main     : {info['android_main']}")
+        print(f"  - Docker Compiler  : {info['dockerfile_android']}")
+        print(f"  - GitHub Actions   : {info['github_workflow']}")
         print(f"  - Mobile Simulator : Run `pyfusion run mobile` to preview on desktop")
     else:
         info = create_desktop_shortcut()
@@ -694,17 +698,23 @@ def build_parser():
     config_parser.add_argument("--color", help="Set theme accent color (e.g. #10b981)")
     config_parser.set_defaults(func=cmd_config)
 
-    # pyfusion build [shortcut|exe|android]
+    # pyfusion build [shortcut|exe|android|apk|aab]
     build_parser_sub = subparsers.add_parser(
         "build",
-        help="Save Desktop shortcut (.lnk), build standalone Windows .exe, or generate Android APK project",
+        help="Save Desktop shortcut (.lnk), build standalone Windows .exe, or build Android .apk / .aab",
     )
     build_parser_sub.add_argument(
         "target",
         nargs="?",
         default="shortcut",
-        choices=["shortcut", "exe", "android"],
-        help="'shortcut' (saves Desktop .lnk), 'exe' (standalone Windows .exe), or 'android' (Android APK build config)",
+        choices=["shortcut", "exe", "android", "apk", "aab"],
+        help="'shortcut' (Desktop .lnk), 'exe' (Windows .exe), 'apk' (Android direct install), 'aab' (Google Play Store bundle), or 'android' (both)",
+    )
+    build_parser_sub.add_argument(
+        "--format",
+        default="both",
+        choices=["apk", "aab", "both"],
+        help="Android package format when target is 'android' (default: both)",
     )
     build_parser_sub.add_argument("--name", help="Override project name")
     build_parser_sub.add_argument("--title", help="Override desktop shortcut/window title")

@@ -1,0 +1,8 @@
+FROM kivy/buildozer:latest
+USER root
+WORKDIR /home/user/hostcwd
+COPY . /home/user/hostcwd
+WORKDIR /home/user/hostcwd/mobile
+# Build Debug .APK: docker run --rm -v ${PWD}:/home/user/hostcwd -w /home/user/hostcwd/mobile kivy/buildozer android debug
+# Build Release .AAB: docker run --rm -v ${PWD}:/home/user/hostcwd -w /home/user/hostcwd/mobile kivy/buildozer android release
+CMD ["buildozer", "android", "debug"]

@@ -401,17 +401,27 @@ class AndroidSimulatorWindow:
         card = WebCard(self.viewport, bg=WebTheme.BG_BASE_100, pad_x=16, pad_y=16)
         card.pack(fill=tk.BOTH, expand=True)
 
-        WebBadge(card.body, text="ANDROID PACKAGING", variant="emerald").pack(anchor="w", pady=(0, 6))
+        WebBadge(card.body, text="ANDROID .APK & .AAB BUILDER", variant="emerald").pack(anchor="w", pady=(0, 6))
         tk.Label(
             card.body,
-            text="Build Android APK & PWA",
+            text="Build .APK or .AAB Package",
             font=(WebTheme.FONT_SANS, 14, "bold"),
             bg=WebTheme.BG_BASE_100,
             fg=WebTheme.TEXT_PRIMARY,
             anchor="w",
-        ).pack(fill=tk.X, pady=(0, 8))
+        ).pack(fill=tk.X, pady=(0, 6))
 
-        status_var = tk.StringVar(value="Ready to generate mobile/buildozer.spec & mobile/capacitor.config.json")
+        tk.Label(
+            card.body,
+            text="• .APK — Direct sideload install on any Android phone\n• .AAB — Official Android App Bundle for Google Play Store",
+            font=(WebTheme.FONT_SANS, 8),
+            bg=WebTheme.BG_BASE_100,
+            fg=WebTheme.TEXT_SECONDARY,
+            justify=tk.LEFT,
+            anchor="w",
+        ).pack(fill=tk.X, pady=(0, 10))
+
+        status_var = tk.StringVar(value="Select .APK (Direct Install), .AAB (Google Play), or Both below.")
         tk.Label(
             card.body,
             textvariable=status_var,
@@ -423,32 +433,41 @@ class AndroidSimulatorWindow:
             anchor="w",
             padx=10,
             pady=10,
-        ).pack(fill=tk.X, pady=(0, 12))
+        ).pack(fill=tk.X, pady=(0, 10))
 
-        def run_generate():
-            res = generate_android_project()
+        def run_generate(fmt: str):
+            res = generate_android_project(artifact_format=fmt)
             status_var.set(
-                f"✓ Synced Android project '{res['package_name']}'!\n"
-                f"• {res['buildozer_spec']}\n"
-                f"• {res['capacitor_config']}\n"
-                f"• PWA: /manifest.json & /sw.js"
+                f"✓ Configured Android {res['format']} ({res['package_name']})!\n"
+                f"• Debug: .{res['debug_artifact'].lower()}  |  Release: .{res['release_artifact'].lower()}\n"
+                f"• Spec: mobile/buildozer.spec\n"
+                f"• CI/CD: .github/workflows/android-apk-aab.yml"
             )
             messagebox.showinfo(
-                "Android Project Synced!",
-                f"Generated Android build files for '{res['app_title']}':\n\n"
-                f"1. Buildozer Spec: {res['buildozer_spec']}\n"
-                f"2. Capacitor Config: {res['capacitor_config']}\n"
-                f"3. Android PWA Manifest: http://localhost:{self.port}/manifest.json",
+                f"Android {res['format']} Ready!",
+                f"Configured Android {res['format']} for '{res['app_title']}':\n\n"
+                f"• Debug Format: .{res['debug_artifact'].lower()} (Direct Phone Install)\n"
+                f"• Release Format: .{res['release_artifact'].lower()} (Google Play Store)\n"
+                f"• Buildozer Spec: {res['buildozer_spec']}\n"
+                f"• Capacitor Config: {res['capacitor_config']}\n"
+                f"• Docker Builder: {res['dockerfile_android']}\n"
+                f"• GitHub Actions CI: {res['github_workflow']}",
             )
 
-        WebButton(card.body, text="⚙️ Generate / Sync Android Build Files", variant="primary", command=run_generate).pack(fill=tk.X, pady=(0, 10))
+        btn_row = tk.Frame(card.body, bg=WebTheme.BG_BASE_100)
+        btn_row.pack(fill=tk.X, pady=(0, 6))
+        WebButton(btn_row, text="📦 Build .APK (Install)", variant="primary", command=lambda: run_generate("apk")).pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 4))
+        WebButton(btn_row, text="🏪 Build .AAB (Play Store)", variant="indigo", command=lambda: run_generate("aab")).pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(4, 0))
+
+        WebButton(card.body, text="⚡ Configure Both (.APK + .AAB + GitHub CI)", variant="outline", command=lambda: run_generate("both")).pack(fill=tk.X, pady=(0, 10))
 
         tk.Label(
             card.body,
-            text="CLI Commands:\n• pyfusion run mobile\n• pyfusion build android\n• buildozer android debug",
+            text="CLI Commands:\n• pyfusion build apk\n• pyfusion build aab\n• pyfusion build android --format both",
             font=(WebTheme.FONT_MONO, 8),
             bg=WebTheme.BG_BASE_100,
             fg=WebTheme.TEXT_SECONDARY,
             justify=tk.LEFT,
             anchor="w",
-        ).pack(fill=tk.X, pady=(6, 0))
+        ).pack(fill=tk.X, pady=(4, 0))
+
