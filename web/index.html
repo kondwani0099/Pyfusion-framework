@@ -8,6 +8,9 @@
     <title>PyFusion Framework — Reactive Web, Database ORM & OWASP Security</title>
     <link href="https://cdn.jsdelivr.net/npm/daisyui@4.5.0/dist/full.min.css" rel="stylesheet" type="text/css" />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap">
+    <meta name="theme-color" content="#10b981">
+    <meta name="mobile-web-app-capable" content="yes">
+    <link rel="manifest" href="/manifest.json">
     <link rel="icon" type="image/png" href="/assets/logo.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="/assets/styles.css">
@@ -388,10 +391,16 @@ def increment(self):
                         </div>
                     </div>
 
-                    <div class="card-actions justify-end mt-4 gap-2">
+                    <div class="card-actions justify-end mt-4 gap-2 flex-wrap">
                         <button onclick="saveProjectSettings()" class="btn btn-sm btn-outline">💾 Save Name &amp; Icon</button>
                         <button onclick="saveDesktopShortcutFromWeb()" class="btn btn-sm bg-emerald-600 hover:bg-emerald-500 text-white border-none">
                             🖥️ Save Desktop App Shortcut (.lnk)
+                        </button>
+                        <button onclick="buildAndroidFromWeb()" class="btn btn-sm bg-indigo-600 hover:bg-indigo-500 text-white border-none">
+                            📱 Build Android APK Config
+                        </button>
+                        <button onclick="launchMobileFromWeb()" class="btn btn-sm btn-outline border-emerald-500/40 text-emerald-400">
+                            🤖 Launch Android Simulator
                         </button>
                     </div>
                 </div>
@@ -736,6 +745,40 @@ def increment(self):
             } catch (e) {
                 showToast('Failed to save desktop shortcut', 'error');
             }
+        }
+
+        async function buildAndroidFromWeb() {
+            const project_name = document.getElementById('cfg-project-name').value;
+            const app_title = document.getElementById('cfg-app-title').value;
+            const icon = document.getElementById('cfg-icon-path').value;
+            const badge = document.getElementById('project-cfg-badge');
+            try {
+                const res = await fetch('/api/project/build-android', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ project_name, app_title, icon })
+                });
+                const data = await res.json();
+                const info = data.android_info || {};
+                badge.textContent = `✓ Android APK Ready (${info.package_name})`;
+                showToast(`Generated mobile/buildozer.spec & mobile/capacitor.config.json!`);
+            } catch (e) {
+                showToast('Failed to generate Android project', 'error');
+            }
+        }
+
+        async function launchMobileFromWeb() {
+            try {
+                const res = await fetch('/api/project/launch-mobile', { method: 'POST' });
+                const data = await res.json();
+                showToast(`Launched Android Simulator Window (PID: ${data.pid})!`);
+            } catch (e) {
+                showToast('Failed to launch Android Simulator', 'error');
+            }
+        }
+
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js').catch(() => {});
         }
 
         loadProjectSettings();

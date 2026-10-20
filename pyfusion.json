@@ -22,6 +22,8 @@
     "components_dir": "web/components",
     "models_dir": "web/models",
     "stores_dir": "web/stores",
-    "plugins_dir": "web/plugins"
+    "plugins_dir": "web/plugins",
+    "mobile_dir": "mobile",
+    "mobile_entry": "mobile/app.py"
   }
 }

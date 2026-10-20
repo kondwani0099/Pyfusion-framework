@@ -282,6 +282,32 @@ def cmd_run(args):
             engine=getattr(args, "engine", "auto"),
         )
 
+    elif mode == "mobile":
+        if not getattr(args, "foreground", False):
+            from .config import launch_mobile_detached, load_project_config
+
+            extra = []
+            if args.title:
+                extra.extend(["--title", args.title])
+            if getattr(args, "icon", None):
+                extra.extend(["--icon", args.icon])
+            if args.port:
+                extra.extend(["--port", str(args.port)])
+
+            pid = launch_mobile_detached(extra)
+            cfg = load_project_config()
+            title = args.title or cfg.get("app_title", "PyFusion Mobile")
+            print(f"[PyFusion] Launched '{title}' Android Simulator window (PID: {pid}).")
+            return
+
+        from .mobile_simulator import AndroidSimulatorWindow
+
+        AndroidSimulatorWindow(
+            app_name=args.title,
+            icon_path=getattr(args, "icon", None),
+            port=args.port,
+        )
+
     elif mode == "dev":
         from .gui_framework import HTMLAppWindow
 
@@ -438,6 +464,7 @@ def cmd_init(args):
     for folder in (
         "desktop/icons",
         "desktop/shortcuts",
+        "mobile",
         "web/assets",
         "web/components",
         "web/models",
@@ -473,9 +500,22 @@ def cmd_init(args):
             '    HTMLAppWindow()\n'
         )
 
+    with open(os.path.join(target_dir, "mobile", "app.py"), "w", encoding="utf-8") as f:
+        f.write(
+            'import os, sys\n'
+            'PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))\n'
+            'os.chdir(PROJECT_ROOT)\n'
+            'if PROJECT_ROOT not in sys.path:\n'
+            '    sys.path.insert(0, PROJECT_ROOT)\n'
+            'from fusionlib.mobile_simulator import AndroidSimulatorWindow\n\n'
+            'if __name__ == "__main__":\n'
+            '    AndroidSimulatorWindow()\n'
+        )
+
     print(f"[PyFusion] Initialized Vue-style PyFusion project in '{target_dir}'!")
     print("  - pyfusion.json         (Root Project Config)")
     print("  - desktop/app.py        (Desktop Application)")
+    print("  - mobile/app.py         (Android & Mobile Application)")
     print("  - web/app.py            (Web Server & Routes)")
     print("  - web/assets/           (Static CSS, Images, Icons)")
     print("  - web/components/       (Single-File Components .fusion)")
@@ -483,6 +523,7 @@ def cmd_init(args):
     print(f"  cd {project_name}")
     print(f"  pyfusion run web --open --reload")
     print(f"  pyfusion run desktop")
+    print(f"  pyfusion run mobile")
 
 
 def cmd_routes(args):
@@ -523,6 +564,7 @@ def cmd_info(args):
     print(f"Python Version : {sys.version.split()[0]}")
     print(f"Root Config    : {os.path.abspath('pyfusion.json')}")
     print(f"Desktop Folder : {os.path.abspath(paths.get('desktop_dir', 'desktop'))} (entry: {paths.get('desktop_entry', 'desktop/app.py')})")
+    print(f"Mobile Folder  : {os.path.abspath(paths.get('mobile_dir', 'mobile'))} (entry: {paths.get('mobile_entry', 'mobile/app.py')})")
     print(f"Web Folder     : {os.path.abspath(paths.get('web_dir', 'web'))} (entry: {paths.get('web_entry', 'web/app.py')})")
     print(f"Web Assets     : {os.path.abspath(paths.get('assets_dir', 'web/assets'))}")
     print(f"Web Components : {os.path.abspath(paths.get('components_dir', 'web/components'))} ({', '.join(app.components.keys()) if app.components else 'None'})")
@@ -564,7 +606,13 @@ def cmd_config(args):
 
 
 def cmd_build(args):
-    from .config import build_standalone_exe, create_desktop_shortcut, ensure_project_ico, save_project_config
+    from .config import (
+        build_standalone_exe,
+        create_desktop_shortcut,
+        ensure_project_ico,
+        generate_android_project,
+        save_project_config,
+    )
 
     updates = {}
     if args.name:
@@ -578,10 +626,17 @@ def cmd_build(args):
     if updates:
         save_project_config(updates)
 
-    ico_path = ensure_project_ico()
+    ensure_project_ico()
     if args.target == "exe":
         dist_exe = build_standalone_exe(onefile=True)
         print(f"[PyFusion Build] Standalone executable saved at: {dist_exe}")
+    elif args.target == "android":
+        info = generate_android_project()
+        print(f"[PyFusion Android] Synced Android APK & WebView project for '{info['app_title']}' ({info['package_name']})!")
+        print(f"  - Buildozer Spec   : {info['buildozer_spec']}")
+        print(f"  - Capacitor Config : {info['capacitor_config']}")
+        print(f"  - Android Main     : {info['android_main']}")
+        print(f"  - Mobile Simulator : Run `pyfusion run mobile` to preview on desktop")
     else:
         info = create_desktop_shortcut()
         print(f"[PyFusion Build] Saved Windowless Desktop Application '{info['app_title']}'!")
@@ -594,27 +649,27 @@ def cmd_build(args):
 def build_parser():
     parser = argparse.ArgumentParser(
         prog="pyfusion",
-        description="PyFusion Framework CLI - Vue-inspired, OWASP-hardened Web & Desktop framework for Python.",
+        description="PyFusion Framework CLI - Vue-inspired, OWASP-hardened Web, Desktop & Android framework for Python.",
     )
     parser.add_argument("-v", "--version", action="version", version=f"PyFusion {VERSION}")
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
-    # pyfusion run [web|desktop|dev]
-    run_parser = subparsers.add_parser("run", help="Run the PyFusion web server, desktop app, or both (dev)")
+    # pyfusion run [web|desktop|mobile|dev]
+    run_parser = subparsers.add_parser("run", help="Run the PyFusion web server, desktop app, Android mobile simulator, or dev")
     run_parser.add_argument(
         "mode",
         nargs="?",
         default="web",
-        choices=["web", "desktop", "dev"],
-        help="Execution mode: 'web' (default), 'desktop', or 'dev' (both)",
+        choices=["web", "desktop", "mobile", "dev"],
+        help="Execution mode: 'web' (default), 'desktop', 'mobile' (Android simulator), or 'dev'",
     )
     run_parser.add_argument("--host", default="localhost", help="Host address (default: localhost)")
     run_parser.add_argument("-p", "--port", type=int, default=5000, help="Port number (default: 5000)")
     run_parser.add_argument("--open", action="store_true", help="Open web browser automatically")
     run_parser.add_argument("-r", "--reload", action="store_true", help="Enable live-reload on file changes (web mode)")
     run_parser.add_argument("--page", default="index", help="Initial HTML page name for desktop mode (default: index)")
-    run_parser.add_argument("--title", default=None, help="Window title for desktop mode (defaults to pyfusion.json)")
+    run_parser.add_argument("--title", default=None, help="Window title for desktop/mobile mode (defaults to pyfusion.json)")
     run_parser.add_argument("--color", default=None, help="AppBar accent color for desktop mode")
     run_parser.add_argument("--icon", default=None, help="Path to custom window icon (.png or .ico)")
     run_parser.add_argument(
@@ -626,7 +681,7 @@ def build_parser():
     run_parser.add_argument(
         "--foreground",
         action="store_true",
-        help="Attach desktop app to current terminal instead of launching as a detached GUI process",
+        help="Attach desktop/mobile app to current terminal instead of launching as a detached GUI process",
     )
     run_parser.set_defaults(func=cmd_run)
 
@@ -635,21 +690,21 @@ def build_parser():
     config_parser.add_argument("--name", help="Set project_name in pyfusion.json")
     config_parser.add_argument("--title", help="Set desktop window app_title in pyfusion.json")
     config_parser.add_argument("--author", help="Set author name in pyfusion.json")
-    config_parser.add_argument("--icon", help="Set project icon path (.png or .ico) and generate assets/icon.ico")
+    config_parser.add_argument("--icon", help="Set project icon path (.png or .ico) and generate desktop/icons/icon.ico")
     config_parser.add_argument("--color", help="Set theme accent color (e.g. #10b981)")
     config_parser.set_defaults(func=cmd_config)
 
-    # pyfusion build [shortcut|exe]
+    # pyfusion build [shortcut|exe|android]
     build_parser_sub = subparsers.add_parser(
         "build",
-        help="Save Desktop App shortcut (.lnk/.bat) or build standalone .exe with custom name & icon",
+        help="Save Desktop shortcut (.lnk), build standalone Windows .exe, or generate Android APK project",
     )
     build_parser_sub.add_argument(
         "target",
         nargs="?",
         default="shortcut",
-        choices=["shortcut", "exe"],
-        help="'shortcut' (saves Desktop .lnk & .bat launcher) or 'exe' (packages standalone .exe via PyInstaller)",
+        choices=["shortcut", "exe", "android"],
+        help="'shortcut' (saves Desktop .lnk), 'exe' (standalone Windows .exe), or 'android' (Android APK build config)",
     )
     build_parser_sub.add_argument("--name", help="Override project name")
     build_parser_sub.add_argument("--title", help="Override desktop shortcut/window title")

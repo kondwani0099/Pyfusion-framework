@@ -10,6 +10,8 @@ from .config import (
     build_standalone_exe,
     create_desktop_shortcut,
     ensure_project_ico,
+    generate_android_project,
+    launch_mobile_detached,
     load_project_config,
     resolve_web_entry,
     save_project_config,
@@ -296,8 +298,9 @@ class HTMLAppWindow:
 
         cta_row = tk.Frame(hero.body, bg=WebTheme.BG_BASE_200)
         cta_row.pack(anchor="w", pady=(10, 0))
-        WebButton(cta_row, text="⚙️ Customize Name, Icon & Save Desktop App", variant="primary", command=lambda: self.bottom_navigation._navigate("settings")).pack(side=tk.LEFT, padx=(0, 10))
-        WebButton(cta_row, text="⚡ Reactive Counter", variant="outline", command=lambda: self.bottom_navigation._navigate("counter")).pack(side=tk.LEFT, padx=(0, 10))
+        WebButton(cta_row, text="⚙️ Customize Name, Icon & Save", variant="primary", command=lambda: self.bottom_navigation._navigate("settings")).pack(side=tk.LEFT, padx=(0, 8))
+        WebButton(cta_row, text="📱 Android Simulator", variant="indigo", command=lambda: launch_mobile_detached()).pack(side=tk.LEFT, padx=(0, 8))
+        WebButton(cta_row, text="⚡ Reactive Counter", variant="outline", command=lambda: self.bottom_navigation._navigate("counter")).pack(side=tk.LEFT, padx=(0, 8))
         WebButton(cta_row, text="🗄️ Database Explorer", variant="ghost", command=lambda: self.bottom_navigation._navigate("form")).pack(side=tk.LEFT)
 
         # Feature Grid
@@ -406,12 +409,27 @@ class HTMLAppWindow:
                 f"• Desktop Shortcuts: {', '.join(shortcuts_list)}",
             )
 
+        def build_android_config():
+            apply_and_save_config()
+            res = generate_android_project()
+            status_badge.configure(text="✓ Android APK Ready!")
+            log_var.set(f"✓ Generated Android APK project ({res['package_name']}): {res['buildozer_spec']}")
+            messagebox.showinfo(
+                "Android Project Synced!",
+                f"Generated Android APK & WebView files for '{res['app_title']}':\n\n"
+                f"• Buildozer Spec: {res['buildozer_spec']}\n"
+                f"• Capacitor Config: {res['capacitor_config']}\n"
+                f"• Android Main: {res['android_main']}",
+            )
+
         btn_row = tk.Frame(card.body, bg=WebTheme.BG_BASE_100)
         btn_row.pack(fill=tk.X)
 
-        WebButton(btn_row, text="📁 Browse Icon...", variant="outline", command=browse_icon).pack(side=tk.LEFT, padx=(0, 10))
-        WebButton(btn_row, text="💾 Save Name & Icon", variant="indigo", command=apply_and_save_config).pack(side=tk.LEFT, padx=(0, 10))
-        WebButton(btn_row, text="🖥️ Save Desktop App Shortcut (.lnk)", variant="primary", command=save_desktop_app_shortcut).pack(side=tk.LEFT)
+        WebButton(btn_row, text="📁 Browse Icon...", variant="outline", command=browse_icon).pack(side=tk.LEFT, padx=(0, 8))
+        WebButton(btn_row, text="💾 Save Name & Icon", variant="indigo", command=apply_and_save_config).pack(side=tk.LEFT, padx=(0, 8))
+        WebButton(btn_row, text="🖥️ Save Desktop Shortcut (.lnk)", variant="primary", command=save_desktop_app_shortcut).pack(side=tk.LEFT, padx=(0, 8))
+        WebButton(btn_row, text="📱 Build Android APK Config", variant="outline", command=build_android_config).pack(side=tk.LEFT, padx=(0, 8))
+        WebButton(btn_row, text="🤖 Open Android Simulator", variant="ghost", command=lambda: launch_mobile_detached()).pack(side=tk.LEFT)
 
     def _render_counter_view(self):
         self._clear_workspace()

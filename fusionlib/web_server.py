@@ -357,9 +357,62 @@ class PyFusionApp:
             result = create_desktop_shortcut()
             return {"status": "saved", "shortcut_info": result}
 
+        @self.route("/api/project/build-android", methods=["POST"])
+        def build_android_route(request: Request):
+            from .config import generate_android_project, save_project_config
+
+            data = request.json or request.form or {}
+            updates = {}
+            for k in ("project_name", "app_title", "author", "icon"):
+                if k in data and str(data[k]).strip():
+                    updates[k] = str(data[k]).strip()
+            if updates:
+                save_project_config(updates)
+            android_info = generate_android_project()
+            return {"status": "generated", "android_info": android_info}
+
+        @self.route("/api/project/launch-mobile", methods=["POST"])
+        def launch_mobile_route(request: Request):
+            from .config import launch_mobile_detached
+
+            pid = launch_mobile_detached()
+            return {"status": "launched", "pid": pid}
+
+        @self.route("/manifest.json", methods=["GET"])
+        def pwa_manifest(request: Request):
+            from .config import load_project_config
+
+            cfg = load_project_config()
+            return {
+                "name": cfg.get("app_title", "PyFusion App"),
+                "short_name": cfg.get("project_name", "PyFusion"),
+                "start_url": "/",
+                "display": "standalone",
+                "orientation": "portrait",
+                "background_color": "#0b1120",
+                "theme_color": cfg.get("theme_color", "#10b981"),
+                "icons": [
+                    {"src": "/assets/logo.png", "sizes": "192x192", "type": "image/png"},
+                    {"src": "/assets/logo.png", "sizes": "512x512", "type": "image/png"},
+                ],
+            }
+
+        @self.route("/sw.js", methods=["GET"])
+        def pwa_service_worker(request: Request):
+            sw_code = (
+                "self.addEventListener('install', e => self.skipWaiting());\n"
+                "self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));\n"
+                "self.addEventListener('fetch', e => {\n"
+                "  if (e.request.method !== 'GET') return;\n"
+                "  e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));\n"
+                "});\n"
+            )
+            return Response(body=sw_code, status=200, content_type="application/javascript; charset=utf-8")
+
         @self.route("/api/health", methods=["GET"])
         def health_check(request: Request):
             from .config import load_project_config
+            from .mobile_simulator import get_lan_ip
 
             cfg = load_project_config()
             return {
@@ -369,8 +422,10 @@ class PyFusionApp:
                 "app_title": cfg.get("app_title", "Uniplexity AI - PyFusion"),
                 "icon": cfg.get("icon", "web/assets/logo.png"),
                 "paths": cfg.get("paths", {}),
+                "lan_url": f"http://{get_lan_ip()}:{cfg.get('port', 5000)}",
                 "live_reload": True,
                 "owasp_hardened": True,
+                "android_ready": True,
                 "database_connected": self.db is not None,
                 "components": list(self.components.keys()),
                 "stores": list(self.stores.keys()),

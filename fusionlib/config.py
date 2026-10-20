@@ -16,6 +16,8 @@ DEFAULT_PATHS: Dict[str, str] = {
     "desktop_entry": "desktop/app.py",
     "desktop_icons_dir": "desktop/icons",
     "desktop_shortcuts_dir": "desktop/shortcuts",
+    "mobile_dir": "mobile",
+    "mobile_entry": "mobile/app.py",
     "web_dir": "web",
     "web_entry": "web/app.py",
     "assets_dir": "web/assets",
@@ -93,6 +95,14 @@ def resolve_desktop_entry(base_dir: str = None) -> str:
     return fallback if os.path.exists(fallback) else candidate
 
 
+def resolve_mobile_entry(base_dir: str = None) -> str:
+    """Resolve the mobile/Android application entry script (defaults to mobile/app.py)."""
+    root = base_dir or os.getcwd()
+    cfg = load_project_config(root)
+    entry_rel = cfg.get("paths", {}).get("mobile_entry", "mobile/app.py")
+    return os.path.abspath(os.path.join(root, entry_rel))
+
+
 def resolve_web_entry(base_dir: str = None) -> str:
     """Resolve the web application entry script (defaults to web/app.py)."""
     root = base_dir or os.getcwd()
@@ -162,6 +172,28 @@ def launch_desktop_detached(extra_args=None) -> int:
     """
     pythonw = get_windowless_python()
     script_path = resolve_desktop_entry()
+    cmd = [pythonw, script_path]
+    if extra_args:
+        cmd.extend(extra_args)
+
+    proc = subprocess.Popen(
+        cmd,
+        cwd=os.getcwd(),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        close_fds=True,
+    )
+    return proc.pid
+
+
+def launch_mobile_detached(extra_args=None) -> int:
+    """
+    Spawn the PyFusion Android Simulator GUI (mobile/app.py) using pythonw.exe
+    so the mobile phone simulator opens cleanly with zero console/terminal window.
+    """
+    pythonw = get_windowless_python()
+    script_path = resolve_mobile_entry()
     cmd = [pythonw, script_path]
     if extra_args:
         cmd.extend(extra_args)
@@ -251,6 +283,97 @@ def create_desktop_shortcut(target_dir: str = None) -> Dict[str, Any]:
         "shortcuts": created_shortcuts,
         "ico_path": ico_path or "",
         "app_title": app_title,
+    }
+
+
+def generate_android_project(base_dir: str = None) -> Dict[str, Any]:
+    """
+    Generate & sync Android APK build configurations inside `mobile/` from root `pyfusion.json`:
+      1. `mobile/buildozer.spec` — python-for-android WebView bootstrap bundling Python 3 + SQLite + PyFusion
+      2. `mobile/capacitor.config.json` — Capacitor Android Studio hybrid wrapper config
+      3. `mobile/main.py` — Android entry point required by Buildozer (`--android-webview`)
+    """
+    root = base_dir or os.getcwd()
+    cfg = load_project_config(root)
+    project_name = cfg.get("project_name", "PyFusionStudio")
+    app_title = cfg.get("app_title", project_name)
+    version = cfg.get("version", "0.4.0")
+    icon_rel = cfg.get("icon", "web/assets/logo.png")
+    pkg_slug = "".join(c.lower() for c in project_name if c.isalnum()) or "pyfusionapp"
+    app_id = f"org.pyfusion.{pkg_slug}"
+
+    mobile_dir = os.path.abspath(os.path.join(root, cfg.get("paths", {}).get("mobile_dir", "mobile")))
+    os.makedirs(mobile_dir, exist_ok=True)
+
+    # 1. Buildozer spec (python-for-android WebView bootstrap)
+    buildozer_spec_path = os.path.join(mobile_dir, "buildozer.spec")
+    buildozer_content = f"""[app]
+title = {app_title}
+package.name = {pkg_slug}
+package.domain = org.pyfusion
+source.dir = ..
+source.include_exts = py,png,jpg,ico,html,css,js,fusion,json
+source.exclude_dirs = env,venv,.git,__pycache__,desktop/dist,desktop/shortcuts
+version = {version}
+requirements = python3,sqlite3,pyjnius,android
+icon.filename = %(source.dir)s/{icon_rel}
+orientation = portrait
+fullscreen = 0
+
+# Android WebView bootstrap settings
+p4a.bootstrap = webview
+p4a.port = {cfg.get('port', 5000)}
+android.permissions = INTERNET,ACCESS_NETWORK_STATE
+android.api = 34
+android.minapi = 24
+android.archs = arm64-v8a, armeabi-v7a
+
+[buildozer]
+log_level = 2
+warn_on_root = 1
+"""
+    with open(buildozer_spec_path, "w", encoding="utf-8") as f:
+        f.write(buildozer_content)
+
+    # 2. Capacitor config (for Android Studio / Gradle APK wrapper)
+    cap_config_path = os.path.join(mobile_dir, "capacitor.config.json")
+    cap_config = {
+        "appId": app_id,
+        "appName": app_title,
+        "webDir": "../web",
+        "bundledWebRuntime": False,
+        "server": {
+            "url": f"http://10.0.2.2:{cfg.get('port', 5000)}",
+            "cleartext": True,
+        },
+        "android": {
+            "backgroundColor": "#0b1120",
+            "allowMixedContent": True,
+        },
+    }
+    with open(cap_config_path, "w", encoding="utf-8") as f:
+        json.dump(cap_config, f, indent=2)
+
+    # 3. Android entry point shim in mobile/main.py for Buildozer
+    android_main_path = os.path.join(mobile_dir, "main.py")
+    with open(android_main_path, "w", encoding="utf-8") as f:
+        f.write(
+            '"""Buildozer / python-for-android entry point."""\n'
+            "import os, sys\n"
+            "ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))\n"
+            "if ROOT not in sys.path:\n"
+            "    sys.path.insert(0, ROOT)\n"
+            "from fusionlib.mobile_simulator import run_native_android_webview\n\n"
+            'if __name__ == "__main__":\n'
+            f"    run_native_android_webview(port={cfg.get('port', 5000)})\n"
+        )
+
+    return {
+        "app_title": app_title,
+        "package_name": app_id,
+        "buildozer_spec": buildozer_spec_path,
+        "capacitor_config": cap_config_path,
+        "android_main": android_main_path,
     }
 
 
