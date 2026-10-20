@@ -1,5 +1,5 @@
 certifi>=2023.11.17
-charset-normalizer>=3.3.2
+charset-normalizer>=3.5.2
 idna>=3.6
 Pillow>=10.0.0
 pywebview>=5.0.0
