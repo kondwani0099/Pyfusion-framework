@@ -30,7 +30,7 @@ jobs:
 
       - name: Upload Android .APK Artifact
         if: ${{ github.event.inputs.artifact_format != 'aab' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pyfusionstudio-debug-apk
           path: mobile/dist/*.apk
@@ -45,7 +45,7 @@ jobs:
 
       - name: Upload Android .AAB Artifact
         if: ${{ github.event.inputs.artifact_format == 'aab' || github.event.inputs.artifact_format == 'both' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pyfusionstudio-release-aab
           path: mobile/dist/*.aab
