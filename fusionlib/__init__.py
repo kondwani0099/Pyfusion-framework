@@ -1,13 +1,17 @@
-from .component import Component, load_sfc
+from ._version import __version__
+from .component import Component, load_sfc, local_only
 from .database import Field, FusionDB, Model
 from .navigation_manager import NavigationManager
 from .reactivity import FusionPlugin, FusionStore, ReactiveDict, Ref, define_store, reactive, ref
 from .security import (
+    DEFAULT_CSP,
+    STRICT_CSP,
     SecurityConfig,
     create_signed_token,
     escape_html,
     generate_csrf_token,
     hash_password,
+    password_needs_rehash,
     sanitize_html,
     verify_csrf_token,
     verify_password,
@@ -15,13 +19,16 @@ from .security import (
 )
 from .web_server import PyFusionApp, Request, Response, create_app, default_app, render_template, run_web_server
 
-__version__ = "0.4.0"
-
 __all__ = [
     "PyFusionApp",
     "create_app",
+    "__version__",
     "Component",
     "load_sfc",
+    "local_only",
+    "DEFAULT_CSP",
+    "STRICT_CSP",
+    "password_needs_rehash",
     "FusionDB",
     "Model",
     "Field",

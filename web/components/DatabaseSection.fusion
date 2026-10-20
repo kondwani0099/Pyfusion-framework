@@ -1,71 +1,90 @@
 <template>
   <section id="section-form" class="tab-section hidden space-y-8">
     <div class="text-center max-w-2xl mx-auto">
-      <span class="badge badge-primary badge-outline mb-2">SQLite ORM + PBKDF2-SHA256 Password Hashing</span>
+      <span class="badge badge-primary badge-outline mb-2">100% Reactive Python SFC • Auto-Migrating SQLite ORM • PBKDF2-SHA256</span>
       <h2 class="text-3xl font-bold">{{ heading }}</h2>
       <p class="text-sm opacity-75 mt-2">
-        Submitting this form hashes the password with <strong>PBKDF2-HMAC-SHA256 (260,000 iterations)</strong> and saves the record into <code>pyfusion.db</code> using the <code>UserSubmission</code> ORM model.
+        Powered directly by Python methods inside <code>DatabaseSection.fusion</code> using <code>f-model</code>, <code>@submit.prevent</code>, and <code>f-for</code> — zero manual JavaScript DOM manipulation required.
       </p>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
-      <!-- Form Card -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch">
+      <!-- Reactive SFC Form Card -->
       <div class="card bg-base-100 shadow-xl border border-base-content/10">
         <div class="card-body">
-          <h3 class="card-title text-lg mb-2">Create User Record (<code>UserSubmission.create</code>)</h3>
-          <form id="fusion-sample-form" action="/submit_form" method="post" onsubmit="handleFormSubmit(event)" class="space-y-4">
-            <div class="form-control">
-              <label class="label" for="username">
-                <span class="label-text font-medium">Username</span>
-              </label>
-              <input type="text" id="username" name="username" value="kondwani" placeholder="Enter username" class="input input-bordered w-full" required />
+          <div class="flex flex-wrap items-start justify-between gap-2 mb-3">
+            <div>
+              <h3 class="text-lg font-bold leading-snug">Create User Record</h3>
+              <p class="text-xs opacity-60 font-mono mt-0.5">@submit.prevent="save_submission"</p>
+            </div>
+            <span class="badge badge-success badge-outline whitespace-nowrap shrink-0 px-3 py-2.5 font-semibold">
+              Total: {{ record_count }}
+            </span>
+          </div>
+
+          <form @submit.prevent="save_submission" class="space-y-4">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
+              <div class="form-control">
+                <label class="label py-1">
+                  <span class="label-text text-xs font-semibold">Username</span>
+                  <span class="label-text-alt font-mono text-[11px] opacity-60">f-model="username"</span>
+                </label>
+                <input type="text" f-model="username" placeholder="Enter username" class="input input-bordered input-sm h-10 w-full" required />
+              </div>
+
+              <div class="form-control">
+                <label class="label py-1">
+                  <span class="label-text text-xs font-semibold">Role</span>
+                  <span class="label-text-alt text-[11px] text-emerald-400/80">Auto-Migrated</span>
+                </label>
+                <input type="text" f-model="role" placeholder="e.g. Architect, Lead Dev" class="input input-bordered input-sm h-10 w-full" />
+              </div>
             </div>
 
             <div class="form-control">
-              <label class="label" for="password">
-                <span class="label-text font-medium">Password (Hashed with PBKDF2-SHA256)</span>
+              <label class="label py-1">
+                <span class="label-text text-xs font-semibold">Password</span>
+                <span class="label-text-alt text-[11px] opacity-60">PBKDF2-HMAC-SHA256 (600k iterations)</span>
               </label>
-              <input type="password" id="password" name="password" value="pyfusion2026" placeholder="Enter password" class="input input-bordered w-full" required />
+              <input type="password" f-model="password" placeholder="Enter password" class="input input-bordered input-sm h-10 w-full" required />
             </div>
 
-            <div class="form-control">
-              <label class="label cursor-pointer justify-start gap-3">
-                <input type="checkbox" id="ajax-mode-toggle" checked class="checkbox checkbox-success checkbox-sm" />
-                <span class="label-text text-sm">Save via AJAX &amp; refresh live database table below</span>
-              </label>
-            </div>
-
-            <div class="card-actions justify-end pt-2 gap-2">
-              <a href="/form" class="btn btn-ghost btn-sm">Open /form Page</a>
-              <button type="submit" id="form-submit-btn" class="btn bg-emerald-600 hover:bg-emerald-500 text-white border-none px-6">
-                Save to Database
+            <div class="card-actions justify-between items-center pt-3">
+              <a href="/form" class="btn btn-ghost btn-sm">Open Standalone /form</a>
+              <button type="submit" class="btn bg-emerald-600 hover:bg-emerald-500 text-white border-none btn-sm h-10 px-5">
+                ⚡ Save to SQLite (Python RPC)
               </button>
             </div>
           </form>
         </div>
       </div>
 
-      <!-- Live Server Response Console -->
-      <div class="card bg-base-100 shadow-xl border border-base-content/10">
+      <!-- Live Python State Console -->
+      <div class="card bg-base-100 shadow-xl border border-base-content/10 overflow-hidden">
         <div class="card-body">
-          <div class="flex items-center justify-between mb-2">
-            <h3 class="card-title text-lg">Latest SQLite Insert Payload</h3>
-            <span id="form-status-badge" class="badge badge-ghost">Ready</span>
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <div>
+              <h3 class="text-lg font-bold leading-snug">Latest SQLite ORM Payload</h3>
+              <p class="text-xs opacity-60 mt-0.5">Live response from Python <code>UserSubmission.create()</code></p>
+            </div>
+            <span class="badge badge-success badge-outline whitespace-nowrap shrink-0 px-3 py-2.5 font-semibold">
+              {{ status_text }}
+            </span>
           </div>
-          <div id="form-response-box" class="code-window p-4 text-xs min-h-[190px] whitespace-pre-wrap">Click "Save to Database" to insert a record into pyfusion.db...</div>
+          <div class="code-window p-4 text-xs min-h-[210px] max-h-[260px] overflow-auto whitespace-pre-wrap break-all font-mono leading-relaxed">{{ last_payload }}</div>
         </div>
       </div>
     </div>
 
-    <!-- Live SQLite Records Table -->
+    <!-- Reactive f-for SQLite Records Table -->
     <div class="card bg-base-100 shadow-xl border border-base-content/10">
       <div class="card-body">
         <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
           <div>
-            <h3 class="card-title text-lg">Live Database Records (<code>user_submissions</code> table in <code>pyfusion.db</code>)</h3>
-            <p class="text-xs opacity-65">Queried via <code>UserSubmission.all()</code> using 100% parameterized SQL.</p>
+            <h3 class="text-lg font-bold">Live Database Records (Rendered via <code>f-for="rec in submissions"</code>)</h3>
+            <p class="text-xs opacity-65">Queried in Python via <code>UserSubmission.all()</code> using 100% parameterized SQL + automatic schema migration.</p>
           </div>
-          <button onclick="loadDatabaseRecords()" class="btn btn-sm btn-outline">↻ Refresh Table</button>
+          <button @click="refresh_records" class="btn btn-sm btn-outline">↻ Refresh from SQLite</button>
         </div>
 
         <div class="overflow-x-auto">
@@ -74,16 +93,31 @@
               <tr>
                 <th>ID</th>
                 <th>Username</th>
+                <th>Role</th>
                 <th>PBKDF2-SHA256 Password Hash</th>
                 <th>Client IP</th>
                 <th>Created At</th>
                 <th>Action</th>
               </tr>
             </thead>
-            <tbody id="db-records-tbody">
-              <tr><td colspan="6" class="text-center opacity-60 py-4">Loading records from pyfusion.db...</td></tr>
+            <tbody>
+              <tr f-for="rec in submissions">
+                <td class="font-bold text-emerald-400">#{{ rec.id }}</td>
+                <td class="font-medium">{{ rec.username }}</td>
+                <td><span class="badge badge-xs badge-outline whitespace-nowrap">{{ rec.role }}</span></td>
+                <td class="font-mono text-xs opacity-70 max-w-xs truncate">{{ rec.password_hash }}</td>
+                <td class="text-xs opacity-75">{{ rec.ip_address }}</td>
+                <td class="text-xs opacity-75 whitespace-nowrap">{{ rec.created_at }}</td>
+                <td>
+                  <button @click="delete_submission(rec.id)" class="btn btn-xs btn-ghost text-rose-400">Delete</button>
+                </td>
+              </tr>
             </tbody>
           </table>
+
+          <div f-if="record_count == 0" class="text-center opacity-60 py-6 text-sm">
+            No records in <code>pyfusion.db</code> yet. Submit the reactive form above to insert one!
+          </div>
         </div>
       </div>
     </div>
@@ -91,7 +125,109 @@
 </template>
 
 <script>
+class UserSubmission(Model):
+    table_name = "user_submissions"
+
+    username = Field("TEXT", nullable=False)
+    role = Field("TEXT", default="Developer")
+    password_hash = Field("TEXT", nullable=False)
+    ip_address = Field("TEXT", default="127.0.0.1")
+
+
 props = {
     "heading": "Database & Form Explorer"
 }
+
+# Server-owned state: the browser may edit the form fields, but never the records or status output.
+locked = {"submissions", "status_text", "last_payload", "toast_message"}
+
+
+def _fetch_rows():
+    try:
+        rows = []
+        for r in UserSubmission.all(limit=25):
+            d = r.to_dict()
+            if isinstance(d.get("role"), str):
+                d["role"] = d["role"].replace("&amp;", "&")
+            if isinstance(d.get("username"), str):
+                d["username"] = d["username"].replace("&amp;", "&")
+            rows.append(d)
+        return rows
+    except Exception:
+        return []
+
+
+def data(self):
+    rows = _fetch_rows()
+    return {
+        "username": "kondwani",
+        "role": "Creator & Architect",
+        "password": "pyfusion2026",
+        "submissions": rows,
+        "status_text": f"Loaded {len(rows)} rows",
+        "last_payload": json.dumps(
+            {
+                "engine": "SQLite (WAL Mode + Auto-Migrate)",
+                "table": "user_submissions",
+                "records_loaded": len(rows),
+                "latest": rows[0] if rows else None,
+            },
+            indent=2,
+        ),
+        "toast_message": "",
+    }
+
+
+def computed(self):
+    return {
+        "record_count": lambda state: len(state.get("submissions") or []),
+    }
+
+
+def save_submission(self):
+    raw_user = str(self.state.get("username") or "Guest").strip()
+    raw_role = str(self.state.get("role") or "Developer").strip()
+    raw_pass = str(self.state.get("password") or "pyfusion2026")
+
+    pw_hash = hash_password(raw_pass)
+
+    record = UserSubmission.create(
+        username=raw_user,
+        role=raw_role,
+        password_hash=pw_hash,
+        ip_address="127.0.0.1",
+    )
+    rows = _fetch_rows()
+    self.state.submissions = rows
+    self.state.status_text = f"Saved Record #{record.id}"
+    self.state.last_payload = json.dumps(
+        {
+            "status": "success",
+            "message": f"Saved '{raw_user}' ({raw_role}) to pyfusion.db",
+            "record": record.to_dict(),
+            "security": {
+                "password_storage": "PBKDF2-HMAC-SHA256 (600,000 iterations)",
+                "sql_protection": "Parameterized Prepared Statement",
+                "auto_migrated_columns": ["role"],
+            },
+        },
+        indent=2,
+    )
+    self.state.toast_message = f"Saved '{raw_user}' (#{record.id}) to SQLite!"
+
+
+def delete_submission(self, rec_id=None):
+    if rec_id is not None:
+        UserSubmission.delete_by_id(int(rec_id))
+    rows = _fetch_rows()
+    self.state.submissions = rows
+    self.state.status_text = f"Deleted #{rec_id}"
+    self.state.toast_message = f"Deleted record #{rec_id} from pyfusion.db"
+
+
+def refresh_records(self):
+    rows = _fetch_rows()
+    self.state.submissions = rows
+    self.state.status_text = f"Refreshed ({len(rows)} rows)"
+    self.state.toast_message = f"Loaded {len(rows)} records from SQLite"
 </script>

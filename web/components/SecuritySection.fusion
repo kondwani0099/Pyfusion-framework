@@ -8,7 +8,7 @@
       </p>
     </div>
 
-    <!-- Project Name, Icon & Save Desktop / Android App Studio Card -->
+    <!-- Reactive Project Name, Icon & Hybrid App Studio Card -->
     <div class="card bg-base-100 border border-indigo-500/30 shadow-xl">
       <div class="card-body">
         <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
@@ -19,36 +19,36 @@
               <p class="text-xs opacity-70">Persists to root <code>pyfusion.json</code> and generates <code>desktop/icons/icon.ico</code>, <code>desktop/shortcuts/</code> &amp; <code>mobile/buildozer.spec</code></p>
             </div>
           </div>
-          <span id="project-cfg-badge" class="badge badge-success badge-outline">Synced with pyfusion.json</span>
+          <span class="badge badge-success badge-outline">{{ studio_status }}</span>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div class="form-control">
             <label class="label"><span class="label-text text-xs font-semibold">Project Name (Package / .exe Name)</span></label>
-            <input type="text" id="cfg-project-name" value="PyFusion-Studio" class="input input-bordered input-sm w-full" />
+            <input type="text" f-model="project_name" class="input input-bordered input-sm w-full" />
           </div>
           <div class="form-control">
             <label class="label"><span class="label-text text-xs font-semibold">Desktop Window &amp; Shortcut Title</span></label>
-            <input type="text" id="cfg-app-title" value="Uniplexity AI - PyFusion" class="input input-bordered input-sm w-full" />
+            <input type="text" f-model="app_title" class="input input-bordered input-sm w-full" />
           </div>
           <div class="form-control">
             <label class="label"><span class="label-text text-xs font-semibold">Project Icon Path (.png or .ico)</span></label>
-            <input type="text" id="cfg-icon-path" value="web/assets/logo.png" class="input input-bordered input-sm w-full" />
+            <input type="text" f-model="icon" class="input input-bordered input-sm w-full" />
           </div>
         </div>
 
         <div class="card-actions justify-end mt-4 gap-2 flex-wrap">
-          <button onclick="saveProjectSettings()" class="btn btn-sm btn-outline">💾 Save Name &amp; Icon</button>
-          <button onclick="saveDesktopShortcutFromWeb()" class="btn btn-sm bg-emerald-600 hover:bg-emerald-500 text-white border-none">
+          <button @click="save_config" class="btn btn-sm btn-outline">💾 Save Name &amp; Icon</button>
+          <button @click="save_desktop" class="btn btn-sm bg-emerald-600 hover:bg-emerald-500 text-white border-none">
             🖥️ Save Desktop App Shortcut (.lnk)
           </button>
-          <button onclick="buildAndroidFromWeb('apk')" class="btn btn-sm bg-indigo-600 hover:bg-indigo-500 text-white border-none">
+          <button @click="build_apk" class="btn btn-sm bg-indigo-600 hover:bg-indigo-500 text-white border-none">
             📦 Build .APK (Direct Install)
           </button>
-          <button onclick="buildAndroidFromWeb('aab')" class="btn btn-sm bg-purple-600 hover:bg-purple-500 text-white border-none">
+          <button @click="build_aab" class="btn btn-sm bg-purple-600 hover:bg-purple-500 text-white border-none">
             🏪 Build .AAB (Play Store)
           </button>
-          <button onclick="launchMobileFromWeb()" class="btn btn-sm btn-outline border-emerald-500/40 text-emerald-400">
+          <button @click="launch_mobile" class="btn btn-sm btn-outline border-emerald-500/40 text-emerald-400">
             🤖 Launch Android Simulator
           </button>
         </div>
@@ -110,7 +110,7 @@
 
       <div class="card bg-base-100 border border-base-content/10 shadow p-5 flex flex-row items-center justify-between gap-4">
         <div>
-          <div class="text-xs opacity-60 mb-1">Check or Migrate Database Tables</div>
+          <div class="text-xs opacity-60 mb-1">Check or Auto-Migrate Database Tables</div>
           <code class="text-sm font-bold text-indigo-400">pyfusion db migrate</code>
         </div>
         <button onclick="copyCommand('pyfusion db migrate')" class="btn btn-sm btn-outline">Copy</button>
@@ -126,17 +126,84 @@
 
       <div class="card bg-base-100 border border-base-content/10 shadow p-5 flex flex-row items-center justify-between gap-4">
         <div>
-          <div class="text-xs opacity-60 mb-1">Create a Pinia/Vuex-style Reactive Store</div>
-          <code class="text-sm font-bold text-amber-400">pyfusion create store cart</code>
+          <div class="text-xs opacity-60 mb-1">Build Android APK &amp; Play Store AAB</div>
+          <code class="text-sm font-bold text-amber-400">pyfusion build android --format both</code>
         </div>
-        <button onclick="copyCommand('pyfusion create store cart')" class="btn btn-sm btn-outline">Copy</button>
+        <button onclick="copyCommand('pyfusion build android --format both')" class="btn btn-sm btn-outline">Copy</button>
       </div>
     </div>
   </section>
 </template>
 
 <script>
+from fusionlib.config import (
+    create_desktop_shortcut,
+    ensure_project_ico,
+    generate_android_project,
+    launch_mobile_detached,
+    load_project_config,
+    save_project_config,
+)
+
 props = {
     "heading": "Project Name, Icon & OWASP Security"
 }
+
+# Studio actions write project files and spawn processes: allow them only from localhost in development mode.
+restrict_to_localhost = True
+
+
+def data(self):
+    cfg = load_project_config()
+    return {
+        "project_name": cfg.get("project_name", "PyFusion-Studio"),
+        "app_title": cfg.get("app_title", "Uniplexity AI - PyFusion"),
+        "icon": cfg.get("icon", "web/assets/logo.png"),
+        "studio_status": "Synced with pyfusion.json",
+        "toast_message": "",
+    }
+
+
+def _persist(self):
+    updates = {
+        "project_name": str(self.state.get("project_name") or "PyFusion-Studio").strip(),
+        "app_title": str(self.state.get("app_title") or "Uniplexity AI - PyFusion").strip(),
+        "icon": str(self.state.get("icon") or "web/assets/logo.png").strip(),
+    }
+    cfg = save_project_config(updates)
+    ensure_project_ico(cfg.get("icon"))
+    return cfg
+
+
+def save_config(self):
+    cfg = self._persist()
+    self.state.studio_status = f"✓ Saved ({cfg['project_name']})"
+    self.state.toast_message = f"Saved project '{cfg['project_name']}' and generated icon.ico!"
+
+
+def save_desktop(self):
+    cfg = self._persist()
+    info = create_desktop_shortcut()
+    self.state.studio_status = "✓ Desktop Shortcut Created!"
+    self.state.toast_message = f"Created Desktop App Shortcut for '{info.get('app_title', cfg['app_title'])}'!"
+
+
+def build_apk(self):
+    self._persist()
+    info = generate_android_project(artifact_format="apk")
+    self.state.studio_status = f"✓ Android .APK Ready ({info['package_name']})"
+    self.state.toast_message = f"Configured Android .APK ({info['package_name']}) in mobile/buildozer.spec!"
+
+
+def build_aab(self):
+    self._persist()
+    info = generate_android_project(artifact_format="aab")
+    self.state.studio_status = f"✓ Android .AAB Ready ({info['package_name']})"
+    self.state.toast_message = f"Configured Play Store .AAB ({info['package_name']}) in mobile/buildozer.spec!"
+
+
+def launch_mobile(self):
+    pid = launch_mobile_detached()
+    self.state.studio_status = f"✓ Simulator Running (PID {pid})"
+    self.state.toast_message = f"Launched Android Simulator Window (PID: {pid})!"
 </script>

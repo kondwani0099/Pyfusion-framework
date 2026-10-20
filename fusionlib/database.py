@@ -28,7 +28,7 @@ def validate_sql_identifier(name: str) -> str:
 
 
 class Field:
-    """Declarative database column definition for PyFusion Models."""
+    """Declarative database column definition for PyFusion Models with ForeignKey and auto-migration support."""
 
     def __init__(
         self,
@@ -38,6 +38,8 @@ class Field:
         nullable: bool = True,
         unique: bool = False,
         default: Any = None,
+        foreign_key: Optional[str] = None,
+        on_delete: str = "CASCADE",
     ):
         self.sql_type = sql_type.upper()
         self.primary_key = primary_key
@@ -45,6 +47,8 @@ class Field:
         self.nullable = nullable
         self.unique = unique
         self.default = default
+        self.foreign_key = foreign_key
+        self.on_delete = on_delete.upper()
 
     def to_sql(self, col_name: str) -> str:
         validate_sql_identifier(col_name)
@@ -57,6 +61,14 @@ class Field:
             parts.append("NOT NULL")
         if self.unique:
             parts.append("UNIQUE")
+        if self.foreign_key:
+            fk_match = re.match(r"^([a-zA-Z_][a-zA-Z0-9_]*)\(([a-zA-Z_][a-zA-Z0-9_]*)\)$", self.foreign_key.strip())
+            if not fk_match:
+                raise ValueError(f"Invalid foreign_key format {self.foreign_key!r}; expected 'table(column)'")
+            ref_tbl, ref_col = fk_match.group(1), fk_match.group(2)
+            allowed_actions = {"CASCADE", "SET NULL", "RESTRICT", "NO ACTION"}
+            safe_action = self.on_delete if self.on_delete in allowed_actions else "CASCADE"
+            parts.append(f"REFERENCES {ref_tbl}({ref_col}) ON DELETE {safe_action}")
         return " ".join(parts)
 
 
@@ -122,15 +134,23 @@ class FusionDB(FusionPlugin):
         self.models[model_cls.__name__] = model_cls
         return model_cls
 
-    def create_all(self):
-        """Create tables for all registered Models if they do not exist."""
+    def create_all(self) -> List[str]:
+        """Create tables and auto-migrate any newly added columns for all registered Models."""
+        migrations = []
         for model_cls in self.models.values():
-            model_cls.create_table()
+            added = model_cls.create_table()
+            if added:
+                migrations.extend(added)
+        return migrations
+
+    def migrate(self) -> List[str]:
+        """Run automatic schema migrations across all registered Models."""
+        return self.create_all()
 
     def install(self, app, **options):
         """Install FusionDB into a PyFusionApp instance and expose /api/db/status."""
         app.db = self
-        self.create_all()
+        migrations = self.create_all()
 
         @app.get("/api/db/status")
         def db_status(request):
@@ -139,15 +159,20 @@ class FusionDB(FusionPlugin):
                 for r in self.query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
             ]
             counts = {}
+            schema = {}
             for tbl in tables:
                 safe_tbl = validate_sql_identifier(tbl)
                 row = self.query_one(f"SELECT COUNT(*) as count FROM {safe_tbl}")
                 counts[safe_tbl] = row["count"] if row else 0
+                cols = self.query(f"PRAGMA table_info({safe_tbl})")
+                schema[safe_tbl] = [c["name"] for c in cols]
             return {
                 "status": "connected",
-                "engine": "SQLite (WAL Mode)",
+                "engine": "SQLite (WAL Mode + Auto-Migrate)",
                 "database": os.path.basename(self.sqlite_path),
                 "tables": counts,
+                "schema": schema,
+                "recent_migrations": migrations,
             }
 
 
@@ -212,11 +237,29 @@ class Model(metaclass=ModelMeta):
         return cls._db
 
     @classmethod
-    def create_table(cls):
+    def create_table(cls) -> List[str]:
         table = validate_sql_identifier(cls.table_name)
         col_defs = [field.to_sql(col_name) for col_name, field in cls._fields.items()]
         sql = f"CREATE TABLE IF NOT EXISTS {table} ({', '.join(col_defs)});"
         cls.db().execute(sql)
+
+        # Auto-migrate any newly added columns not yet in SQLite table
+        existing_cols = {
+            row["name"] for row in cls.db().query(f"PRAGMA table_info({table})")
+        }
+        migrated: List[str] = []
+        for col_name, field in cls._fields.items():
+            safe_col = validate_sql_identifier(col_name)
+            if safe_col not in existing_cols:
+                default_val = field.default() if callable(field.default) else field.default
+                if default_val is None and not field.nullable:
+                    default_val = "" if field.sql_type == "TEXT" else 0
+                alter_sql = f"ALTER TABLE {table} ADD COLUMN {safe_col} {field.sql_type}"
+                cls.db().execute(alter_sql)
+                if default_val is not None:
+                    cls.db().execute(f"UPDATE {table} SET {safe_col} = ? WHERE {safe_col} IS NULL", (default_val,))
+                migrated.append(f"{table}.{safe_col}")
+        return migrated
 
     @classmethod
     def create(cls, **kwargs) -> "Model":

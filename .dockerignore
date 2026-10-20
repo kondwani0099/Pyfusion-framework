@@ -3,3 +3,16 @@ __pycache__
 *.pyo
 *.pyd
 venv
+.venv
+env
+.git
+.github
+.pyfusion
+.pytest_cache
+.ruff_cache
+*.db
+*.db-shm
+*.db-wal
+desktop/shortcuts
+screenshots
+tests

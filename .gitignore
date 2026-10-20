@@ -26,6 +26,15 @@ main2.py
 *.log
 *.tmp
 
+# PyFusion local development secret (never commit)
+.pyfusion/
+
+# Test / tooling caches
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
 # Exclude database files
 *.db
 *.db-shm

@@ -30,6 +30,7 @@ class UserSubmission(Model):
     table_name = "user_submissions"
 
     username = Field("TEXT", nullable=False)
+    role = Field("TEXT", default="Developer")
     password_hash = Field("TEXT", nullable=False)
     ip_address = Field("TEXT", default="127.0.0.1")
 
@@ -85,7 +86,7 @@ def handle_form_submission(request):
             "record": record.to_dict(),
             "total_records_in_db": total_records,
             "security": {
-                "password_storage": "PBKDF2-HMAC-SHA256 (260,000 iterations)",
+                "password_storage": "PBKDF2-HMAC-SHA256 (600,000 iterations)",
                 "sql_protection": "Parameterized Prepared Statement",
                 "xss_escaped": True,
             },

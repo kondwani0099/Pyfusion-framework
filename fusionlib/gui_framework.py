@@ -7,7 +7,6 @@ from PIL import Image, ImageTk
 from tkhtmlview import HTMLLabel
 
 from .config import (
-    build_standalone_exe,
     create_desktop_shortcut,
     ensure_project_ico,
     generate_android_project,
@@ -202,6 +201,51 @@ class HTMLAppWindow:
         os.makedirs(storage_dir, exist_ok=True)
         webview.start(private_mode=False, storage_path=storage_dir)
 
+    def open_native_webview_app(self):
+        """Launch the full TailwindCSS/DaisyUI PyFusion app inside a chromeless Edge/Chrome WebView2 OS window."""
+        import shutil
+        import subprocess
+        import time
+        from .web_server import default_app, run_web_server
+
+        host = "localhost"
+        if not _is_port_open(host, self.port):
+            app = default_app
+            web_entry = resolve_web_entry()
+            if os.path.exists(web_entry):
+                try:
+                    import importlib.util
+
+                    spec = importlib.util.spec_from_file_location("web_app", web_entry)
+                    mod = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(mod)
+                    if hasattr(mod, "app"):
+                        app = mod.app
+                except Exception:
+                    pass
+            run_web_server(port=self.port, host=host, app=app, in_thread=True)
+            for _ in range(25):
+                if _is_port_open(host, self.port):
+                    break
+                time.sleep(0.1)
+
+        target_url = f"http://{host}:{self.port}"
+        candidates = [
+            shutil.which("msedge"),
+            r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+            r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+            shutil.which("chrome"),
+            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        ]
+        browser_bin = next((c for c in candidates if c and os.path.exists(c)), None)
+        if browser_bin:
+            subprocess.Popen(
+                [browser_bin, f"--app={target_url}", f"--window-size={self.width},{self.height}"],
+                close_fds=True,
+            )
+            return True
+        return False
+
     def _run_modern_tk_window(self):
         self.navigation = NavigationManager(initial_route="index")
         self.navigation.on_navigate(self._on_route_changed)
@@ -298,7 +342,8 @@ class HTMLAppWindow:
 
         cta_row = tk.Frame(hero.body, bg=WebTheme.BG_BASE_200)
         cta_row.pack(anchor="w", pady=(10, 0))
-        WebButton(cta_row, text="⚙️ Customize Name, Icon & Save", variant="primary", command=lambda: self.bottom_navigation._navigate("settings")).pack(side=tk.LEFT, padx=(0, 8))
+        WebButton(cta_row, text="🌐 WebView2 App Mode", variant="primary", command=self.open_native_webview_app).pack(side=tk.LEFT, padx=(0, 8))
+        WebButton(cta_row, text="⚙️ Name, Icon & Save", variant="outline", command=lambda: self.bottom_navigation._navigate("settings")).pack(side=tk.LEFT, padx=(0, 8))
         WebButton(cta_row, text="📱 Android Simulator", variant="indigo", command=lambda: launch_mobile_detached()).pack(side=tk.LEFT, padx=(0, 8))
         WebButton(cta_row, text="⚡ Reactive Counter", variant="outline", command=lambda: self.bottom_navigation._navigate("counter")).pack(side=tk.LEFT, padx=(0, 8))
         WebButton(cta_row, text="🗄️ Database Explorer", variant="ghost", command=lambda: self.bottom_navigation._navigate("form")).pack(side=tk.LEFT)

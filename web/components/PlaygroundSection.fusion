@@ -4,7 +4,7 @@
       <span class="badge badge-success badge-outline mb-2">Live Python ↔ Browser Reactivity</span>
       <h2 class="text-3xl font-bold">Vue-Style Single-File Component Playground</h2>
       <p class="text-sm opacity-75 mt-2">
-        Powered by <code>web/components/PlaygroundSection.fusion</code> &amp; <code>Counter.fusion</code>. Clicking <strong>+1</strong> or <strong>-1</strong> invokes Python methods via <code>/_pyfusion/rpc</code> (protected by CSRF + method allowlisting).
+        Powered by <code>web/components/PlaygroundSection.fusion</code> &amp; <code>Counter.fusion</code>. Clicking <strong>+1</strong> or <strong>-1</strong> invokes Python methods via <code>/_pyfusion/rpc</code> (protected by CSRF, signed state snapshots + method allowlisting).
       </p>
     </div>
 
@@ -85,6 +85,9 @@ def increment(self):
 props = {
     "title": "PyFusion Reactive Counter"
 }
+
+# Server-owned state: the browser cannot modify these directly, only via actions below.
+locked = {"count"}
 
 def data(self):
     return {

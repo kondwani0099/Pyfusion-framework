@@ -55,6 +55,9 @@ props = {
     "title": "PyFusion Reactive Counter"
 }
 
+# Server-owned state: the browser cannot modify these directly, only via actions below.
+locked = {"count"}
+
 def data(self):
     return {
         "count": 0,

@@ -1,9 +1,11 @@
 # web_server.py
 import hashlib
 import json
+import logging
 import mimetypes
 import os
 import re
+import secrets
 import threading
 import webbrowser
 from http.cookies import SimpleCookie
@@ -11,17 +13,88 @@ from http.server import SimpleHTTPRequestHandler
 from socketserver import ThreadingTCPServer
 from urllib.parse import parse_qs, urlparse
 
-from .component import CLIENT_RUNTIME_JS, Component, load_sfc
+from .component import Component, get_client_runtime_js, load_sfc, serialize_state, set_default_state_secret
 from .reactivity import FusionPlugin, FusionStore
 from .security import (
     RateLimiter,
     SecurityConfig,
+    csrf_tokens_match,
     escape_html,
     generate_csrf_token,
     get_owasp_security_headers,
+    is_loopback,
     is_safe_static_path,
+    sign_state,
     verify_csrf_token,
+    verify_state,
 )
+
+logger = logging.getLogger("pyfusion")
+
+CSRF_COOKIE_NAME = "pyfusion_csrf"
+CSRF_HEADER_NAME = "X-CSRF-Token"
+CSRF_FORM_FIELD = "csrf_token"
+SAFE_HTTP_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
+
+_FORM_POST_RE = re.compile(r"(<form\b[^>]*\bmethod\s*=\s*[\"']?post[\"']?[^>]*>)", re.IGNORECASE)
+
+
+def _resolve_debug(debug=None) -> bool:
+    """Resolve development/production mode.
+
+    Precedence: explicit argument > PYFUSION_DEBUG > PYFUSION_ENV ("production"/"prod" disables debug).
+    Development mode is the default so `pyfusion run web` keeps hot reload out of the box.
+    """
+    if debug is not None:
+        return bool(debug)
+    flag = os.environ.get("PYFUSION_DEBUG", "").strip().lower()
+    if flag in ("1", "true", "yes", "on"):
+        return True
+    if flag in ("0", "false", "no", "off"):
+        return False
+    return os.environ.get("PYFUSION_ENV", "").strip().lower() not in ("production", "prod")
+
+
+def _load_or_create_dev_secret(base_dir: str) -> str:
+    """Persist a per-project development secret (like Rails' tmp/local_secret.txt) so restarts keep sessions valid."""
+    path = os.path.join(base_dir, ".pyfusion", "dev_secret")
+    try:
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                value = f.read().strip()
+            if len(value) >= 32:
+                return value
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        value = secrets.token_hex(32)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(value)
+        try:
+            os.chmod(path, 0o600)
+        except OSError:
+            pass
+        return value
+    except OSError:
+        return secrets.token_hex(32)
+
+
+def inject_csrf_into_forms(html_text: str, token: str) -> str:
+    """Add a hidden csrf_token field to every <form method="post"> (Django/Rails-style automatic form protection)."""
+    if not token or "<form" not in html_text.lower():
+        return html_text
+    hidden = f'<input type="hidden" name="{CSRF_FORM_FIELD}" value="{escape_html(token)}">'
+    return _FORM_POST_RE.sub(lambda m: m.group(1) + hidden, html_text)
+
+
+def _parse_cookies(raw_cookie: str) -> dict:
+    cookies = {}
+    if raw_cookie:
+        cookie = SimpleCookie()
+        try:
+            cookie.load(raw_cookie)
+            cookies = {k: v.value for k, v in cookie.items()}
+        except Exception:
+            pass
+    return cookies
 
 
 class Request:
@@ -36,17 +109,11 @@ class Request:
         self.body = body_bytes
         self.route_params = route_params or {}
         self.client_ip = client_ip
+        self.csrf_token = None
+        self.db = None
 
         # Parse cookies
-        self.cookies = {}
-        raw_cookie = self.headers.get("Cookie", "")
-        if raw_cookie:
-            cookie = SimpleCookie()
-            try:
-                cookie.load(raw_cookie)
-                self.cookies = {k: v.value for k, v in cookie.items()}
-            except Exception:
-                pass
+        self.cookies = _parse_cookies(self.headers.get("Cookie", ""))
 
         # Parse query parameters
         raw_query = parse_qs(parsed_url.query, keep_blank_values=True)
@@ -78,7 +145,7 @@ class Response:
         self.content_type = content_type
 
         if isinstance(body, (dict, list)):
-            self.body = json.dumps(body).encode("utf-8")
+            self.body = json.dumps(body, default=str).encode("utf-8")
             self.content_type = "application/json; charset=utf-8"
         elif isinstance(body, bytes):
             self.body = body
@@ -123,10 +190,10 @@ def render_template(template_name, web_dir=None, **context):
 class PyFusionApp:
     """
     Vue.js-inspired application container with built-in OWASP Top 10 Security,
-    Database plugin integration, and Browser Live-Reload.
+    Database plugin integration, and Browser Live-Reload (development mode).
     """
 
-    def __init__(self, root_component=None, web_dir=None, components_dir=None, security_config=None):
+    def __init__(self, root_component=None, web_dir=None, components_dir=None, security_config=None, debug=None):
         if web_dir is None:
             default_web = os.path.abspath(os.path.join(os.path.dirname(__file__), "../web"))
             self.web_dir = default_web if os.path.exists(default_web) else os.path.abspath("web")
@@ -145,8 +212,10 @@ class PyFusionApp:
         else:
             self.components_dir = os.path.abspath(components_dir)
 
+        self.debug = _resolve_debug(debug)
         self.security = security_config or SecurityConfig()
         self.rate_limiter = RateLimiter(max_requests=self.security.rate_limit_per_minute, window_seconds=60)
+        set_default_state_secret(self.security.secret_key)
 
         self.routes = []
         self.components = {}
@@ -154,6 +223,8 @@ class PyFusionApp:
         self.plugins = []
         self.config = {}
         self.db = None
+        self.csrf_exempt_paths = set()
+        self._prepared = False
 
         self._discover_sfc_components()
         self._register_default_routes()
@@ -161,9 +232,34 @@ class PyFusionApp:
         if root_component is not None:
             self.mount("/", root_component)
 
+    # --- Lifecycle ---
+
+    def prepare_for_serving(self, host: str = "localhost"):
+        """Validate configuration before accepting traffic (fail fast on insecure production setups)."""
+        if self._prepared:
+            return
+        if self.security.secret_key_is_ephemeral:
+            if self.debug:
+                self.security.secret_key = _load_or_create_dev_secret(os.getcwd())
+                self.security.secret_key_is_ephemeral = False
+            else:
+                raise RuntimeError(
+                    "PYFUSION_SECRET_KEY must be set in production. "
+                    "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+                )
+        set_default_state_secret(self.security.secret_key)
+
+        if not self.debug and not is_loopback(host) and host != "localhost" and not self.security.enable_hsts:
+            logger.warning(
+                "PyFusion is serving on %s without HSTS. Terminate TLS at a reverse proxy and pass "
+                "SecurityConfig(enable_hsts=True) so cookies are marked Secure.",
+                host,
+            )
+        self._prepared = True
+
     def _compute_livereload_hash(self) -> str:
         """Compute a digest of modification times across web/, components/, and .py files for instant browser reload."""
-        hasher = hashlib.md5()
+        hasher = hashlib.md5(usedforsecurity=False)
         watch_dirs = [self.web_dir, self.components_dir, os.getcwd()]
         seen = set()
         for d in watch_dirs:
@@ -200,15 +296,21 @@ class PyFusionApp:
                         if existing is None or getattr(existing, "_sfc_mtime", None) != mtime:
                             self.component(comp_name, full_path)
                     except Exception as exc:
-                        print(f"[PyFusion] Warning: Failed to compile {fname}: {exc}")
+                        logger.warning("[PyFusion] Failed to compile %s: %s", fname, exc)
+
+    def _hot_reload_components(self):
+        """Re-scan .fusion files on each request in development mode only (production compiles once)."""
+        if self.debug:
+            self._discover_sfc_components()
 
     def render_html_with_components(self, html_content: str) -> str:
         """Expand any registered <ComponentName /> or <ComponentName></ComponentName> tags inside HTML."""
-        self._discover_sfc_components()
+        self._hot_reload_components()
         if not self.components:
             return html_content
 
         rendered = html_content
+        secret = self.security.secret_key
         for _ in range(4):
             changed = False
             for tag_name, comp_cls in list(self.components.items()):
@@ -221,7 +323,7 @@ class PyFusionApp:
                         attr_str = match.group(1) or ""
                         parsed_props = dict(re.findall(r'([a-zA-Z0-9_-]+)=["\']([^"\']*)["\']', attr_str))
                         instance = cls(**parsed_props)
-                        return instance.render_fragment(registry=self.components)
+                        return instance.render_fragment(registry=self.components, secret=secret)
 
                     rendered = pattern.sub(replace_tag, rendered)
                     changed = True
@@ -273,26 +375,67 @@ class PyFusionApp:
 
         @self.route(route_path, methods=["GET"])
         def mounted_component_view(request: Request):
-            self._discover_sfc_components()
+            self._hot_reload_components()
             latest_cls = self.components.get(comp_name, comp_cls)
-            instance = latest_cls(**request.query)
-            csrf_tok = request.cookies.get("pyfusion_csrf") or generate_csrf_token(self.security.secret_key)
-            return instance.render_page(title=title or comp_name, registry=self.components, csrf_token=csrf_tok)
+            # Only declared props may be set from the query string (mass-assignment protection)
+            instance = latest_cls(**latest_cls.declared_props(request.query))
+            csrf_tok = request.csrf_token or generate_csrf_token(self.security.secret_key)
+            return instance.render_page(
+                title=title or comp_name,
+                registry=self.components,
+                csrf_token=csrf_tok,
+                secret=self.security.secret_key,
+            )
 
         mounted_component_view.__name__ = f"mount_{comp_name}"
         return self
+
+    def csrf_exempt(self, path_or_func=None):
+        """Exempt a route path from CSRF checks (e.g. signed third-party webhooks).
+
+        Usage: ``app.csrf_exempt("/webhooks/stripe")`` or as a decorator placed *above* ``@app.post(...)``.
+        """
+        if isinstance(path_or_func, str):
+            self.csrf_exempt_paths.add(path_or_func)
+            return path_or_func
+
+        def decorator(func):
+            for r in self.routes:
+                if r["handler"] is func:
+                    self.csrf_exempt_paths.add(r["path"])
+            return func
+
+        return decorator(path_or_func) if callable(path_or_func) else decorator
+
+    def is_csrf_exempt(self, path: str) -> bool:
+        for r in self.routes:
+            if r["path"] in self.csrf_exempt_paths and r["regex"].match(path):
+                return True
+        return path in self.csrf_exempt_paths
+
+    def _dev_tools_guard(self, request: Request):
+        """Developer-studio endpoints mutate the local machine; allow them only on localhost in development mode."""
+        if self.debug and is_loopback(request.client_ip):
+            return None
+        return Response(
+            {"error": "Developer tools are only available on localhost in development mode.", "code": "dev_only"},
+            status=403,
+        )
 
     def _register_default_routes(self):
         @self.route("/_pyfusion/client.js", methods=["GET"])
         def serve_client_runtime(request: Request):
             return Response(
-                body=CLIENT_RUNTIME_JS,
+                body=get_client_runtime_js(livereload=self.debug),
                 status=200,
+                headers={"Cache-Control": "no-cache"},
                 content_type="application/javascript; charset=utf-8",
             )
 
         @self.route("/_pyfusion/livereload", methods=["GET"])
         def serve_livereload_hash(request: Request):
+            if not self.debug:
+                return Response({"error": "Not found"}, status=404)
             self._discover_sfc_components()
             return {
                 "hash": self._compute_livereload_hash(),
@@ -301,40 +444,92 @@ class PyFusionApp:
 
         @self.route("/_pyfusion/rpc", methods=["POST"])
         def handle_component_rpc(request: Request):
-            self._discover_sfc_components()
-            payload = request.json or {}
+            self._hot_reload_components()
+            payload = request.json if isinstance(request.json, dict) else {}
             comp_id = payload.get("component_id")
             method_name = payload.get("method")
             args = payload.get("args", [])
-            client_state = payload.get("state", {})
+            secret = self.security.secret_key
 
-            if not comp_id or comp_id not in self.components:
-                return Response({"error": f"Unknown component '{comp_id}'"}, status=404)
+            if not isinstance(comp_id, str) or comp_id not in self.components:
+                return Response({"error": "Unknown component", "code": "unknown_component"}, status=404)
+
+            snapshot = None
+            if self.security.state_signing:
+                snapshot_raw = payload.get("snapshot")
+                if not verify_state(comp_id, snapshot_raw, payload.get("checksum"), secret):
+                    return Response(
+                        {
+                            "error": "Component state failed its integrity check. Please reload the page.",
+                            "code": "stale_state",
+                        },
+                        status=403,
+                    )
+                try:
+                    snapshot = json.loads(snapshot_raw)
+                except (TypeError, ValueError):
+                    return Response({"error": "Malformed state snapshot", "code": "bad_request"}, status=400)
+                updates = payload.get("updates") or {}
+            else:
+                updates = payload.get("updates") or payload.get("state") or {}
 
             comp_cls = self.components[comp_id]
             instance = comp_cls()
+
+            if isinstance(method_name, str) and instance.is_local_only_action(method_name):
+                if not (self.debug and is_loopback(request.client_ip)):
+                    return Response(
+                        {"error": "This action is only available on localhost in development mode.", "code": "local_only"},
+                        status=403,
+                    )
+
             try:
-                new_state = instance.invoke_method(method_name, args=args, client_state=client_state)
-                return {"status": "ok", "component": comp_id, "state": new_state}
+                new_state = instance.invoke_method(method_name, args=args, client_state=updates, snapshot=snapshot)
             except PermissionError as exc:
-                return Response({"error": str(exc)}, status=403)
+                return Response({"error": str(exc), "code": "forbidden"}, status=403)
+            except ValueError as exc:
+                return Response({"error": str(exc) if self.debug else "Invalid request", "code": "bad_request"}, status=400)
             except Exception as exc:
-                return Response({"error": str(exc)}, status=400)
+                logger.exception("[PyFusion RPC Error] %s.%s", comp_id, method_name)
+                return Response(
+                    {"error": str(exc) if self.debug else "Internal server error", "code": "server_error"},
+                    status=500,
+                )
+
+            snapshot_json = serialize_state(new_state)
+            return {
+                "status": "ok",
+                "component": comp_id,
+                "state": new_state,
+                "snapshot": snapshot_json,
+                "checksum": sign_state(comp_id, snapshot_json, secret),
+            }
 
         @self.route("/api/security/audit", methods=["GET"])
         def security_audit(request: Request):
+            sec = self.security
             return {
-                "status": "hardened",
-                "standard": "OWASP Top 10 (2021/2025)",
+                "status": "ok",
+                "mode": "development" if self.debug else "production",
+                "standard": "OWASP Top 10 (2021)",
                 "protections": {
-                    "A01_Broken_Access_Control": "Path traversal blocking + RPC method allowlisting + SameSite cookies",
-                    "A02_Cryptographic_Failures": "PBKDF2-HMAC-SHA256 (260k iterations) + HMAC-SHA256 signed tokens",
-                    "A03_Injection": "100% Parameterized SQL queries + SQL identifier validation + Automatic HTML XSS escaping",
-                    "A04_Insecure_Design": f"Sliding-window IP Rate Limiter ({self.security.rate_limit_per_minute} req/min) + 2MB body cap",
-                    "A05_Security_Misconfiguration": "Strict OWASP HTTP headers (X-Frame-Options, nosniff, Referrer-Policy, Permissions-Policy)",
-                    "A07_Identification_And_Auth": "CSRF HMAC token generation & constant-time verification",
+                    "A01_Broken_Access_Control": "Path traversal blocking, no directory listing, RPC action allowlist, "
+                    "locked props, localhost-only developer tools",
+                    "A02_Cryptographic_Failures": "PBKDF2-HMAC-SHA256 (600k iterations), HMAC-SHA256 signed tokens "
+                    "and component state snapshots",
+                    "A03_Injection": "Parameterized SQL, SQL identifier validation, automatic HTML escaping"
+                    + (", Content-Security-Policy" if sec.content_security_policy else ""),
+                    "A04_Insecure_Design": f"Sliding-window IP rate limiter ({sec.rate_limit_per_minute} req/min), "
+                    f"{sec.max_body_size // 1024} KB body cap, 30s socket timeout",
+                    "A05_Security_Misconfiguration": "OWASP HTTP headers, server version hidden, generic error messages "
+                    "in production",
+                    "A07_Identification_And_Auth": "CSRF signed double-submit cookie "
+                    + ("(enforced)" if sec.csrf_enabled else "(DISABLED)"),
+                    "A08_Software_And_Data_Integrity": "State snapshot checksums "
+                    + ("(enforced)" if sec.state_signing else "(DISABLED)"),
                 },
-                "headers_active": list(get_owasp_security_headers(self.security).keys()),
+                "headers_active": list(get_owasp_security_headers(sec).keys()),
+                "secure_cookies": sec.secure_cookies,
             }
 
         @self.route("/submit_form", methods=["POST"])
@@ -342,7 +537,8 @@ class PyFusionApp:
             username = escape_html(request.form.get("username", "Guest"))
             accept = request.headers.get("Accept", "")
             if "application/json" in accept:
-                return {"status": "success", "message": f"Form submitted by {username}", "data": request.form}
+                safe_form = {k: v for k, v in request.form.items() if k != CSRF_FORM_FIELD}
+                return {"status": "success", "message": f"Form submitted by {username}", "data": safe_form}
             return (
                 f"<!DOCTYPE html><html><head><meta charset='utf-8'>"
                 f"<title>Form Submitted</title>"
@@ -355,6 +551,9 @@ class PyFusionApp:
 
         @self.route("/api/project/config", methods=["GET", "POST"])
         def project_config_route(request: Request):
+            denied = self._dev_tools_guard(request)
+            if denied:
+                return denied
             from .config import ensure_project_ico, load_project_config, save_project_config
 
             if request.method == "POST":
@@ -371,6 +570,9 @@ class PyFusionApp:
 
         @self.route("/api/project/save-desktop", methods=["POST"])
         def save_desktop_route(request: Request):
+            denied = self._dev_tools_guard(request)
+            if denied:
+                return denied
             from .config import create_desktop_shortcut, ensure_project_ico, save_project_config
 
             data = request.json or request.form or {}
@@ -386,6 +588,9 @@ class PyFusionApp:
 
         @self.route("/api/project/build-android", methods=["POST"])
         def build_android_route(request: Request):
+            denied = self._dev_tools_guard(request)
+            if denied:
+                return denied
             from .config import generate_android_project, save_project_config
 
             data = request.json or request.form or {}
@@ -401,6 +606,9 @@ class PyFusionApp:
 
         @self.route("/api/project/launch-mobile", methods=["POST"])
         def launch_mobile_route(request: Request):
+            denied = self._dev_tools_guard(request)
+            if denied:
+                return denied
             from .config import launch_mobile_detached
 
             pid = launch_mobile_detached()
@@ -427,18 +635,30 @@ class PyFusionApp:
 
         @self.route("/sw.js", methods=["GET"])
         def pwa_service_worker(request: Request):
+            # Only handle same-origin GETs. Cross-origin assets (CDNs) go straight to the network; proxying them
+            # through the worker would subject them to the worker's own CSP (connect-src 'self') and break them.
             sw_code = (
                 "self.addEventListener('install', e => self.skipWaiting());\n"
                 "self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));\n"
                 "self.addEventListener('fetch', e => {\n"
                 "  if (e.request.method !== 'GET') return;\n"
+                "  if (new URL(e.request.url).origin !== self.location.origin) return;\n"
                 "  e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));\n"
                 "});\n"
             )
-            return Response(body=sw_code, status=200, content_type="application/javascript; charset=utf-8")
+            return Response(
+                body=sw_code,
+                status=200,
+                headers={"Cache-Control": "no-cache"},
+                content_type="application/javascript; charset=utf-8",
+            )
 
         @self.route("/api/health", methods=["GET"])
         def health_check(request: Request):
+            if not self.debug:
+                # Liveness probe only: do not disclose internals in production (OWASP A05)
+                return {"status": "ok"}
+
             from .config import load_project_config
             from .mobile_simulator import get_lan_ip
 
@@ -446,6 +666,7 @@ class PyFusionApp:
             return {
                 "status": "ok",
                 "framework": "PyFusion",
+                "mode": "development",
                 "project_name": cfg.get("project_name", "PyFusion-Studio"),
                 "app_title": cfg.get("app_title", "Uniplexity AI - PyFusion"),
                 "icon": cfg.get("icon", "web/assets/logo.png"),
@@ -486,6 +707,12 @@ class PyFusionApp:
     def post(self, path):
         return self.route(path, methods=["POST"])
 
+    def put(self, path):
+        return self.route(path, methods=["PUT"])
+
+    def patch(self, path):
+        return self.route(path, methods=["PATCH"])
+
     def delete(self, path):
         return self.route(path, methods=["DELETE"])
 
@@ -514,6 +741,8 @@ class CustomHandler(SimpleHTTPRequestHandler):
     """OWASP-Hardened HTTP Request Handler supporting PyFusionApp routes, live-reload, and static files."""
 
     app = default_app
+    # Drop idle/slow connections (mitigates slowloris-style resource exhaustion)
+    timeout = 30
 
     def __init__(self, *args, **kwargs):
         web_dir = self.app.web_dir if self.app and os.path.exists(self.app.web_dir) else os.getcwd()
@@ -530,20 +759,56 @@ class CustomHandler(SimpleHTTPRequestHandler):
                 self.send_header(k, v)
         super().end_headers()
 
+    def list_directory(self, path):
+        # Never expose directory listings (OWASP A01 / A05)
+        self.send_error(404, "Not found")
+        return None
+
+    # --- helpers ---
+
+    def _client_ip(self) -> str:
+        return self.client_address[0] if self.client_address else "127.0.0.1"
+
+    def _csrf_cookie_header(self, token: str) -> str:
+        parts = [f"{CSRF_COOKIE_NAME}={token}", "Path=/", "SameSite=Lax"]
+        if self.app.security.secure_cookies:
+            parts.append("Secure")
+        return "; ".join(parts)
+
+    def _resolve_csrf_token(self, cookies: dict):
+        """Return (token, is_new). Invalid or foreign cookies (e.g. after a secret rotation) are replaced."""
+        secret = self.app.security.secret_key
+        existing = cookies.get(CSRF_COOKIE_NAME)
+        if existing and verify_csrf_token(existing, secret):
+            return existing, False
+        return generate_csrf_token(secret), True
+
+    def _send_json(self, status: int, payload: dict, extra_headers: dict = None):
+        body = json.dumps(payload).encode("utf-8")
+        try:
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            for k, v in (extra_headers or {}).items():
+                self.send_header(k, v)
+            self.end_headers()
+            self.wfile.write(body)
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+            pass
+
     def _check_rate_limit(self) -> bool:
-        client_ip = self.client_address[0] if self.client_address else "127.0.0.1"
+        client_ip = self._client_ip()
         # Exempt livereload polling from rate limit counter
         if urlparse(self.path).path == "/_pyfusion/livereload":
             return True
         allowed, retry_after = self.app.rate_limiter.is_allowed(client_ip)
         if not allowed:
-            body = json.dumps({"error": "Too many requests. Please slow down.", "retry_after": retry_after}).encode("utf-8")
-            self.send_response(429)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Retry-After", str(retry_after))
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+            self._send_json(
+                429,
+                {"error": "Too many requests. Please slow down.", "retry_after": retry_after},
+                {"Retry-After": str(retry_after)},
+            )
             return False
         return True
 
@@ -557,18 +822,20 @@ class CustomHandler(SimpleHTTPRequestHandler):
         if handler is None:
             return False
 
-        content_length = int(self.headers.get("Content-Length", 0))
+        try:
+            content_length = int(self.headers.get("Content-Length", 0) or 0)
+        except ValueError:
+            self._send_json(400, {"error": "Invalid Content-Length"})
+            return True
+        if content_length < 0:
+            self._send_json(400, {"error": "Invalid Content-Length"})
+            return True
         if content_length > self.app.security.max_body_size:
-            body = json.dumps({"error": "Payload too large"}).encode("utf-8")
-            self.send_response(413)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+            self._send_json(413, {"error": "Payload too large"})
             return True
 
         body_bytes = self.rfile.read(content_length) if content_length > 0 else b""
-        client_ip = self.client_address[0] if self.client_address else "127.0.0.1"
+        client_ip = self._client_ip()
 
         req = Request(
             method=method,
@@ -579,13 +846,43 @@ class CustomHandler(SimpleHTTPRequestHandler):
             client_ip=client_ip,
         )
         req.db = getattr(self.app, "db", None)
+        csrf_token, csrf_is_new = self._resolve_csrf_token(req.cookies)
+        req.csrf_token = csrf_token
+        cookie_headers = {"Set-Cookie": self._csrf_cookie_header(csrf_token)} if csrf_is_new else {}
+
+        # OWASP CSRF Prevention: signed double-submit cookie on every state-changing request
+        if (
+            method not in SAFE_HTTP_METHODS
+            and self.app.security.csrf_enabled
+            and not self.app.is_csrf_exempt(parsed_path)
+        ):
+            submitted = self.headers.get(CSRF_HEADER_NAME)
+            if not submitted and isinstance(req.form, dict):
+                submitted = req.form.get(CSRF_FORM_FIELD)
+            if not submitted and isinstance(req.json, dict):
+                submitted = req.json.get(CSRF_FORM_FIELD)
+            if isinstance(submitted, list):
+                submitted = submitted[0] if submitted else None
+            if not csrf_tokens_match(req.cookies.get(CSRF_COOKIE_NAME), submitted, self.app.security.secret_key):
+                self._send_json(
+                    403,
+                    {"error": "CSRF token missing or invalid. Reload the page and try again.", "code": "csrf_failed"},
+                    cookie_headers,
+                )
+                return True
 
         try:
             result = handler(req)
             if isinstance(result, Response):
                 resp = result
             elif isinstance(result, Component):
-                resp = Response(body=result.render_page(registry=self.app.components))
+                resp = Response(
+                    body=result.render_page(
+                        registry=self.app.components,
+                        csrf_token=csrf_token,
+                        secret=self.app.security.secret_key,
+                    )
+                )
             elif isinstance(result, tuple):
                 body, status = result[0], result[1]
                 headers = result[2] if len(result) > 2 else None
@@ -593,23 +890,29 @@ class CustomHandler(SimpleHTTPRequestHandler):
             else:
                 resp = Response(body=result)
         except Exception as exc:
-            print(f"[PyFusion Route Error] {method} {self.path}: {exc}")
+            logger.exception("[PyFusion Route Error] %s %s", method, self.path)
             resp = Response(
-                body={"error": "Internal server error"},
+                body={"error": str(exc) if self.app.debug else "Internal server error"},
                 status=500,
             )
+
+        body_out = resp.body
+        if resp.content_type.startswith("text/html"):
+            try:
+                body_out = inject_csrf_into_forms(body_out.decode("utf-8"), csrf_token).encode("utf-8")
+            except UnicodeDecodeError:
+                pass
 
         try:
             self.send_response(resp.status)
             self.send_header("Content-Type", resp.content_type)
-            self.send_header("Content-Length", str(len(resp.body)))
-            if "pyfusion_csrf" not in req.cookies:
-                csrf_token = generate_csrf_token(self.app.security.secret_key)
-                self.send_header("Set-Cookie", f"pyfusion_csrf={csrf_token}; Path=/; SameSite=Lax")
+            self.send_header("Content-Length", str(len(body_out)))
+            for k, v in cookie_headers.items():
+                self.send_header(k, v)
             for k, v in resp.headers.items():
                 self.send_header(k, v)
             self.end_headers()
-            self.wfile.write(resp.body)
+            self.wfile.write(body_out)
         except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
             pass
         return True
@@ -638,15 +941,7 @@ class CustomHandler(SimpleHTTPRequestHandler):
         rel_target = "index.html" if parsed_path == "/" else parsed_path
         is_safe, target_abspath = is_safe_static_path(self.directory, rel_target)
         if not is_safe:
-            body = json.dumps({"error": "Forbidden path"}).encode("utf-8")
-            try:
-                self.send_response(403)
-                self.send_header("Content-Type", "application/json; charset=utf-8")
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
-            except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
-                pass
+            self._send_json(403, {"error": "Forbidden path"})
             return
 
         # Automatically expand Vue-style .fusion components inside .html pages (e.g., web/index.html)
@@ -654,49 +949,56 @@ class CustomHandler(SimpleHTTPRequestHandler):
             try:
                 with open(target_abspath, "r", encoding="utf-8") as f:
                     raw_html = f.read()
+                csrf_token, csrf_is_new = self._resolve_csrf_token(_parse_cookies(self.headers.get("Cookie", "")))
                 compiled_html = self.app.render_html_with_components(raw_html)
+                compiled_html = inject_csrf_into_forms(compiled_html, csrf_token)
                 body = compiled_html.encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Content-Length", str(len(body)))
-                raw_cookie = self.headers.get("Cookie", "")
-                if "pyfusion_csrf=" not in raw_cookie:
-                    csrf_token = generate_csrf_token(self.app.security.secret_key)
-                    self.send_header("Set-Cookie", f"pyfusion_csrf={csrf_token}; Path=/; SameSite=Lax")
+                self.send_header("Cache-Control", "no-cache")
+                if csrf_is_new:
+                    self.send_header("Set-Cookie", self._csrf_cookie_header(csrf_token))
                 self.end_headers()
                 self.wfile.write(body)
                 return
             except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
                 return
-            except Exception as exc:
-                print(f"[PyFusion HTML Component Render Error] {rel_target}: {exc}")
+            except Exception:
+                logger.exception("[PyFusion HTML Component Render Error] %s", rel_target)
 
         try:
             super().do_GET()
         except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
             pass
 
+    def do_HEAD(self):
+        parsed_path = urlparse(self.path).path
+        is_safe, _ = is_safe_static_path(self.directory, "index.html" if parsed_path == "/" else parsed_path)
+        if not is_safe:
+            self._send_json(403, {"error": "Forbidden path"})
+            return
+        super().do_HEAD()
+
     def do_POST(self):
         if self._dispatch_route("POST"):
             return
+        self._send_json(404, {"error": "Route not found"})
 
-        content_length = min(int(self.headers.get("Content-Length", 0)), self.app.security.max_body_size)
-        post_data = self.rfile.read(content_length).decode("utf-8", errors="replace")
+    def do_PUT(self):
+        if self._dispatch_route("PUT"):
+            return
+        self._send_json(404, {"error": "Route not found"})
 
-        response_bytes = json.dumps({"status": "received", "data": escape_html(post_data)}).encode("utf-8")
-        try:
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Content-Length", str(len(response_bytes)))
-            self.end_headers()
-            self.wfile.write(response_bytes)
-        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
-            pass
+    def do_PATCH(self):
+        if self._dispatch_route("PATCH"):
+            return
+        self._send_json(404, {"error": "Route not found"})
 
     def do_DELETE(self):
         if self._dispatch_route("DELETE"):
             return
-        self.send_error(404, "Route not found")
+        self._send_json(404, {"error": "Route not found"})
 
     def log_message(self, format, *args):
         # Suppress noisy livereload polling logs in terminal
@@ -706,13 +1008,15 @@ class CustomHandler(SimpleHTTPRequestHandler):
 
 
 class ReusableTCPServer(ThreadingTCPServer):
-    allow_reuse_address = True
+    # SO_REUSEADDR on Windows allows a second process to bind the same port (port hijacking), so only enable it on POSIX.
+    allow_reuse_address = os.name != "nt"
     daemon_threads = True
 
 
 def run_web_server(port=5000, host="localhost", app=None, in_thread=False, open_browser=False):
     """Start the OWASP-hardened PyFusion HTTP server."""
     active_app = app or default_app
+    active_app.prepare_for_serving(host)
 
     class BoundHandler(CustomHandler):
         pass
@@ -723,9 +1027,13 @@ def run_web_server(port=5000, host="localhost", app=None, in_thread=False, open_
     server_address = (host, port)
     httpd = ReusableTCPServer(server_address, BoundHandler)
 
-    url = f"http://{host}:{port}"
-    print(f"PyFusion Server running at {url} [OWASP Hardened + Browser Live-Reload]")
+    bound_port = httpd.server_address[1]
+    url = f"http://{host}:{bound_port}"
+    mode = "development (live-reload on)" if active_app.debug else "production"
+    print(f"PyFusion Server running at {url} [{mode}]")
     print(f"Serving web directory: {active_app.web_dir}")
+    if active_app.debug:
+        print("  Development mode. For deployments set PYFUSION_ENV=production and PYFUSION_SECRET_KEY.")
     if active_app.components:
         print(f"Registered Components: {', '.join(active_app.components.keys())}")
 

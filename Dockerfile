@@ -1,21 +1,25 @@
-# Use an official Python runtime as a parent image
-FROM python:3.8-slim
+# Production image for a PyFusion web app
+FROM python:3.12-slim
 
-# Set the working directory in the container
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYFUSION_ENV=production
+
 WORKDIR /app
 
-# Copy the current directory contents into the container at /app
-COPY . /app
+# Install dependencies first for better layer caching
+COPY requirements.txt pyproject.toml README.md LICENSE ./
+COPY fusionlib ./fusionlib
+RUN pip install --no-cache-dir -r requirements.txt && pip install --no-cache-dir .
 
-# Install any needed packages specified in requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy the application
+COPY . .
 
-# Make port 5000 available to the world outside this container
+# Run as an unprivileged user
+RUN useradd --create-home --uid 10001 pyfusion && chown -R pyfusion /app
+USER pyfusion
+
 EXPOSE 5000
 
-# Define environment variable
-ENV NAME World
-
-# Run web/app.py when the container launches
-CMD ["python", "web/app.py"]
-
+# PYFUSION_SECRET_KEY must be provided at runtime: docker run -e PYFUSION_SECRET_KEY=... (the server refuses to start without it)
+CMD ["pyfusion", "run", "web", "--production", "--host", "0.0.0.0", "--port", "5000"]

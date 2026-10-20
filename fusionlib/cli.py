@@ -3,9 +3,8 @@ import os
 import subprocess
 import sys
 import time
+from ._version import __version__ as VERSION
 from .web_server import default_app, run_web_server
-
-VERSION = "0.4.0"
 
 PAGE_HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="en" data-theme="dark">
@@ -71,6 +70,9 @@ SFC_COMPONENT_TEMPLATE = """<template>
 props = {{
     "title": "{component_name} Component"
 }}
+
+# Server-owned state: the browser cannot modify these directly, only via actions below.
+locked = {{"count"}}
 
 def data(self):
     return {{
@@ -234,8 +236,12 @@ def _load_user_app():
 
 def cmd_run(args):
     mode = args.mode
+    if getattr(args, "production", False):
+        # Must be set before the user's app module is imported so PyFusionApp() resolves production mode.
+        os.environ["PYFUSION_ENV"] = "production"
+        default_app.debug = False
     if mode == "web":
-        if args.reload:
+        if args.reload and not getattr(args, "production", False):
             _run_with_reloader(args.host, args.port, args.open)
             return
 
@@ -672,6 +678,11 @@ def build_parser():
     run_parser.add_argument("-p", "--port", type=int, default=5000, help="Port number (default: 5000)")
     run_parser.add_argument("--open", action="store_true", help="Open web browser automatically")
     run_parser.add_argument("-r", "--reload", action="store_true", help="Enable live-reload on file changes (web mode)")
+    run_parser.add_argument(
+        "--production",
+        action="store_true",
+        help="Run in production mode (no live-reload, generic errors, requires PYFUSION_SECRET_KEY)",
+    )
     run_parser.add_argument("--page", default="index", help="Initial HTML page name for desktop mode (default: index)")
     run_parser.add_argument("--title", default=None, help="Window title for desktop/mobile mode (defaults to pyfusion.json)")
     run_parser.add_argument("--color", default=None, help="AppBar accent color for desktop mode")

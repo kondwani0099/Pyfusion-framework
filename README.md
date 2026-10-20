@@ -1,5 +1,10 @@
 # PyFusion Framework
 
+[![CI](https://github.com/kondwani0099/pyfusion-framework/actions/workflows/ci.yml/badge.svg)](https://github.com/kondwani0099/pyfusion-framework/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/kondwani0099/pyfusion-framework/actions/workflows/codeql.yml/badge.svg)](https://github.com/kondwani0099/pyfusion-framework/actions/workflows/codeql.yml)
+[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue)](pyproject.toml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 Description:
 PyFusion is an open-source, **Vue.js-inspired** Python framework designed for the seamless development of both reactive web and desktop applications. Combining Python's simplicity with Vue-style **Single-File Components (`.fusion`)**, reactive state (`ref`, `reactive`, `define_store`), and an extensible plugin architecture (`app.use()`), PyFusion empowers developers to build and share components, stores, and plugins on top of the framework.
 
@@ -66,10 +71,15 @@ pyfusion-framework/
    cd pyfusion-framework
    ```
 
-2. Install dependencies and the `pyfusion` CLI:
+2. Install dependencies and the `pyfusion` CLI (Python 3.10+):
    ```bash
    pip install -r requirements.txt
-   pip install -e .
+   pip install -e ".[dev]"
+   ```
+
+3. Run the test suite:
+   ```bash
+   pytest
    ```
 
 ---
@@ -179,12 +189,59 @@ if __name__ == "__main__":
 
 ---
 
+## Security Model
+
+PyFusion components run on the server, and their state round-trips through the browser. The framework
+protects that round-trip by default:
+
+| Protection | How |
+|---|---|
+| **CSRF** | Signed double-submit cookie enforced on every POST/PUT/PATCH/DELETE. Tokens are auto-injected into `<form method="post">`, and `fetch()` gets `X-CSRF-Token` automatically. |
+| **State integrity** | Component state is an HMAC-SHA256-signed snapshot. Tampered snapshots are rejected. |
+| **Action allowlist** | Only functions you define in the component are callable from the browser. |
+| **Locked props** | `locked = {"balance", "is_admin"}`: the browser can never change these. |
+| **Local-only actions** | `@local_only` or `restrict_to_localhost = True` for actions that touch the machine. |
+| **Passwords** | PBKDF2-HMAC-SHA256 at 600k iterations, plus `password_needs_rehash()`. |
+| **Headers** | CSP, X-Frame-Options, nosniff, Referrer-Policy, Permissions-Policy, optional HSTS. |
+
+```html
+<script>
+locked = {"count"}            # server-owned state
+
+def increment(self):          # callable from @click="increment"
+    self.state.count += 1
+
+@local_only                   # only from localhost in development mode
+def rebuild_icons(self):
+    ...
+</script>
+```
+
+See [SECURITY.md](SECURITY.md) for the full model and how to report vulnerabilities.
+
+## Production Deployment
+
+```bash
+export PYFUSION_ENV=production
+export PYFUSION_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')"
+pyfusion run web --production --host 127.0.0.1 --port 5000
+```
+
+- Production mode disables live reload, hides error details and internal health data, and refuses to
+  start without `PYFUSION_SECRET_KEY`.
+- Put it behind a TLS reverse proxy (nginx, Caddy) and use `SecurityConfig(enable_hsts=True)` so cookies
+  are marked `Secure`.
+
 ## Docker Support
 To build and run your Docker image:
 ```bash
 docker build -t pyfusion-app .
-docker run -p 5000:5000 pyfusion-app
+docker run -p 5000:5000 -e PYFUSION_SECRET_KEY=change-me pyfusion-app
 ```
+
+## Contributing
+Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) and our
+[Code of Conduct](CODE_OF_CONDUCT.md). Release notes live in [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 This project is licensed under the [MIT License](LICENSE).
