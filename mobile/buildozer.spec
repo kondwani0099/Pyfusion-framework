@@ -19,7 +19,7 @@ android.api = 34
 android.minapi = 24
 android.archs = arm64-v8a, armeabi-v7a
 android.release_artifact = aab
-android.debug_artifact = apk
+android.debug_artifact = aab
 
 [buildozer]
 log_level = 2
