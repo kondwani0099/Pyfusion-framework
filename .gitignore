@@ -8,11 +8,6 @@ old/
 notes1.md
 notes.md
 
-
-# Exclude app.py
-app.py
-
-
 # Exclude specific Python files
 main2.py
 
