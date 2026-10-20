@@ -1,5 +1,6 @@
 """
 Project configuration, icon generator, and windowless desktop packaging utilities for PyFusion Framework.
+Root configuration lives in `pyfusion.json` outside `desktop/` and `web/`.
 """
 
 import json
@@ -10,19 +11,34 @@ from typing import Any, Dict, Optional
 
 CONFIG_FILENAME = "pyfusion.json"
 
+DEFAULT_PATHS: Dict[str, str] = {
+    "desktop_dir": "desktop",
+    "desktop_entry": "desktop/app.py",
+    "desktop_icons_dir": "desktop/icons",
+    "desktop_shortcuts_dir": "desktop/shortcuts",
+    "web_dir": "web",
+    "web_entry": "web/app.py",
+    "assets_dir": "web/assets",
+    "components_dir": "web/components",
+    "models_dir": "web/models",
+    "stores_dir": "web/stores",
+    "plugins_dir": "web/plugins",
+}
+
 DEFAULT_CONFIG: Dict[str, Any] = {
     "project_name": "PyFusion-Studio",
-    "app_title": "Lapansi Industries - PyFusion",
+    "app_title": "Uniplexity AI - PyFusion",
     "author": "Kondwani Nyirenda",
     "version": "0.4.0",
-    "icon": "web/logo.png",
-    "ico_path": "assets/icon.ico",
+    "icon": "web/assets/logo.png",
+    "ico_path": "desktop/icons/icon.ico",
     "theme_color": "#10b981",
     "engine": "tk",
     "host": "localhost",
     "port": 5000,
     "width": 1120,
     "height": 760,
+    "paths": dict(DEFAULT_PATHS),
 }
 
 
@@ -32,22 +48,28 @@ def get_config_path(base_dir: str = None) -> str:
 
 
 def load_project_config(base_dir: str = None) -> Dict[str, Any]:
-    """Load pyfusion.json merged with default settings."""
+    """Load root pyfusion.json merged with default settings and folder paths."""
     cfg = dict(DEFAULT_CONFIG)
+    cfg["paths"] = dict(DEFAULT_PATHS)
     path = get_config_path(base_dir)
     if os.path.exists(path):
         try:
             with open(path, "r", encoding="utf-8") as f:
                 user_cfg = json.load(f)
             if isinstance(user_cfg, dict):
+                user_paths = user_cfg.get("paths")
                 cfg.update(user_cfg)
+                merged_paths = dict(DEFAULT_PATHS)
+                if isinstance(user_paths, dict):
+                    merged_paths.update(user_paths)
+                cfg["paths"] = merged_paths
         except Exception:
             pass
     return cfg
 
 
 def save_project_config(updates: Dict[str, Any], base_dir: str = None) -> Dict[str, Any]:
-    """Update and persist project configuration to pyfusion.json."""
+    """Update and persist project configuration to root pyfusion.json."""
     cfg = load_project_config(base_dir)
     for k, v in updates.items():
         if v is not None:
@@ -59,14 +81,38 @@ def save_project_config(updates: Dict[str, Any], base_dir: str = None) -> Dict[s
     return cfg
 
 
+def resolve_desktop_entry(base_dir: str = None) -> str:
+    """Resolve the desktop application entry script (defaults to desktop/app.py)."""
+    root = base_dir or os.getcwd()
+    cfg = load_project_config(root)
+    entry_rel = cfg.get("paths", {}).get("desktop_entry", "desktop/app.py")
+    candidate = os.path.abspath(os.path.join(root, entry_rel))
+    if os.path.exists(candidate):
+        return candidate
+    fallback = os.path.abspath(os.path.join(root, "desktop_app.py"))
+    return fallback if os.path.exists(fallback) else candidate
+
+
+def resolve_web_entry(base_dir: str = None) -> str:
+    """Resolve the web application entry script (defaults to web/app.py)."""
+    root = base_dir or os.getcwd()
+    cfg = load_project_config(root)
+    entry_rel = cfg.get("paths", {}).get("web_entry", "web/app.py")
+    candidate = os.path.abspath(os.path.join(root, entry_rel))
+    if os.path.exists(candidate):
+        return candidate
+    fallback = os.path.abspath(os.path.join(root, "webapp.py"))
+    return fallback if os.path.exists(fallback) else candidate
+
+
 def ensure_project_ico(icon_source: str = None, output_ico: str = None) -> Optional[str]:
     """
-    Convert a PNG/JPG logo into a multi-size Windows .ico file (assets/icon.ico) using Pillow,
+    Convert a PNG/JPG logo into a multi-size Windows .ico file (desktop/icons/icon.ico) using Pillow,
     so desktop windows, shortcuts, and standalone .exe builds use the custom project icon.
     """
     cfg = load_project_config()
-    src = icon_source or cfg.get("icon", "web/logo.png")
-    dst = output_ico or cfg.get("ico_path", "assets/icon.ico")
+    src = icon_source or cfg.get("icon", "web/assets/logo.png")
+    dst = output_ico or cfg.get("ico_path", "desktop/icons/icon.ico")
 
     if not os.path.isabs(src):
         src = os.path.abspath(src)
@@ -77,11 +123,13 @@ def ensure_project_ico(icon_source: str = None, output_ico: str = None) -> Optio
         return src
 
     if not os.path.exists(src):
-        fallback = os.path.abspath("web/logo.png")
-        if os.path.exists(fallback):
-            src = fallback
+        for candidate in ("web/assets/logo.png", "desktop/icons/logo.png", "web/logo.png"):
+            abs_cand = os.path.abspath(candidate)
+            if os.path.exists(abs_cand):
+                src = abs_cand
+                break
         else:
-            return None
+            return dst if os.path.exists(dst) else None
 
     try:
         from PIL import Image
@@ -91,7 +139,7 @@ def ensure_project_ico(icon_source: str = None, output_ico: str = None) -> Optio
         img.save(dst, format="ICO", sizes=[(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
         return dst
     except Exception:
-        return None
+        return dst if os.path.exists(dst) else None
 
 
 def get_windowless_python() -> str:
@@ -109,11 +157,11 @@ def get_windowless_python() -> str:
 
 def launch_desktop_detached(extra_args=None) -> int:
     """
-    Spawn the PyFusion Desktop GUI using pythonw.exe (a Windows GUI subsystem binary)
-    without CREATE_NO_WINDOW so the GUI window is visible while no console window is created.
+    Spawn the PyFusion Desktop GUI (desktop/app.py) using pythonw.exe (a Windows GUI subsystem binary)
+    so the GUI window opens cleanly with zero console/terminal window.
     """
     pythonw = get_windowless_python()
-    script_path = os.path.abspath("desktop_app.py")
+    script_path = resolve_desktop_entry()
     cmd = [pythonw, script_path]
     if extra_args:
         cmd.extend(extra_args)
@@ -131,9 +179,8 @@ def launch_desktop_detached(extra_args=None) -> int:
 
 def create_desktop_shortcut(target_dir: str = None) -> Dict[str, Any]:
     """
-    Create a Desktop App shortcut (.lnk) pointing directly to pythonw.exe + desktop_app.py
-    with WindowStyle = 1 (Normal GUI Window) and custom .ico icon.
-    Because pythonw.exe is a GUI-subsystem executable, Windows opens ONLY the GUI window and NEVER opens a terminal.
+    Create a Desktop App shortcut (.lnk) and windowless launcher (.vbs) inside `desktop/shortcuts/`
+    (and on the user's Windows Desktop) pointing to `pythonw.exe` + `desktop/app.py` with custom .ico icon.
     """
     cfg = load_project_config()
     project_name = cfg.get("project_name", "PyFusion-Studio")
@@ -143,18 +190,27 @@ def create_desktop_shortcut(target_dir: str = None) -> Dict[str, Any]:
     ico_path = ensure_project_ico()
     cwd = os.getcwd()
     pythonw_exe = get_windowless_python()
-    desktop_script = os.path.join(cwd, "desktop_app.py")
+    desktop_script = resolve_desktop_entry(cwd)
 
-    # Clean up old .bat or .vbs launchers
-    for fname in os.listdir(cwd):
-        if fname.startswith("Launch ") and (fname.endswith(".bat") or fname.endswith(".vbs")):
-            try:
-                os.remove(os.path.join(cwd, fname))
-            except OSError:
-                pass
+    shortcuts_dir_rel = cfg.get("paths", {}).get("desktop_shortcuts_dir", "desktop/shortcuts")
+    shortcuts_dir = os.path.abspath(os.path.join(cwd, shortcuts_dir_rel))
+    os.makedirs(shortcuts_dir, exist_ok=True)
 
-    # Create a clean VBScript launcher with window style 1 (Normal GUI window, pythonw has no console)
-    launcher_vbs = os.path.join(cwd, f"Launch {safe_filename}.vbs")
+    # Clean up old launchers in desktop/shortcuts/ and root
+    for folder in (shortcuts_dir, cwd):
+        if not os.path.exists(folder):
+            continue
+        for fname in os.listdir(folder):
+            if (fname.startswith("Launch ") and (fname.endswith(".bat") or fname.endswith(".vbs"))) or (
+                folder == cwd and fname.endswith(".lnk")
+            ):
+                try:
+                    os.remove(os.path.join(folder, fname))
+                except OSError:
+                    pass
+
+    # Create a clean VBScript launcher inside desktop/shortcuts/
+    launcher_vbs = os.path.join(shortcuts_dir, f"Launch {safe_filename}.vbs")
     vbs_content = (
         f'Set WshShell = CreateObject("WScript.Shell")\r\n'
         f'WshShell.CurrentDirectory = "{cwd}"\r\n'
@@ -163,8 +219,8 @@ def create_desktop_shortcut(target_dir: str = None) -> Dict[str, Any]:
     with open(launcher_vbs, "w", encoding="utf-8") as f:
         f.write(vbs_content)
 
-    # Create Windows .lnk shortcuts pointing directly to pythonw.exe + desktop_app.py
-    shortcut_locations = [os.path.join(cwd, f"{safe_filename}.lnk")]
+    # Create Windows .lnk shortcuts in desktop/shortcuts/ and on user's Desktop
+    shortcut_locations = [os.path.join(shortcuts_dir, f"{safe_filename}.lnk")]
     user_desktop = target_dir or os.path.join(os.path.expanduser("~"), "Desktop")
     if os.path.exists(user_desktop):
         shortcut_locations.append(os.path.join(user_desktop, f"{safe_filename}.lnk"))
@@ -200,12 +256,14 @@ def create_desktop_shortcut(target_dir: str = None) -> Dict[str, Any]:
 
 def build_standalone_exe(onefile: bool = True) -> Optional[str]:
     """
-    Package the PyFusion desktop app into a standalone windowless Windows .exe in dist/ using PyInstaller,
-    embedding web/, components/, assets/, and the custom .ico icon and project name.
+    Package the PyFusion desktop app (`desktop/app.py`) into a standalone windowless Windows .exe
+    in `desktop/dist/` using PyInstaller, embedding `web/` and `desktop/icons/` and custom .ico icon.
     """
     cfg = load_project_config()
     project_name = cfg.get("project_name", "PyFusionApp").replace(" ", "-")
     ico_path = ensure_project_ico()
+    desktop_script = resolve_desktop_entry()
+    dist_dir = os.path.abspath(os.path.join("desktop", "dist"))
 
     try:
         import PyInstaller  # noqa: F401
@@ -221,6 +279,7 @@ def build_standalone_exe(onefile: bool = True) -> Optional[str]:
         "--clean",
         "--noconsole",
         "--windowed",
+        f"--distpath={dist_dir}",
         f"--name={project_name}",
     ]
     if onefile:
@@ -228,13 +287,13 @@ def build_standalone_exe(onefile: bool = True) -> Optional[str]:
     if ico_path and os.path.exists(ico_path):
         cmd.append(f"--icon={ico_path}")
 
-    for folder in ("web", "components", "assets"):
+    for folder in ("web", "desktop"):
         if os.path.exists(folder):
             cmd.append(f"--add-data={folder}{sep}{folder}")
 
-    cmd.append("desktop_app.py")
+    cmd.append(desktop_script)
 
     subprocess.run(cmd, check=True)
     exe_ext = ".exe" if os.name == "nt" else ""
-    dist_path = os.path.abspath(os.path.join("dist", f"{project_name}{exe_ext}"))
-    return dist_path if os.path.exists(dist_path) else os.path.abspath("dist")
+    dist_path = os.path.join(dist_dir, f"{project_name}{exe_ext}")
+    return dist_path if os.path.exists(dist_path) else dist_dir

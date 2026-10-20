@@ -3,12 +3,25 @@
   "app_title": "Uniplexity AI - PyFusion",
   "author": "Kondwani Nyirenda",
   "version": "0.4.0",
-  "icon": "web/logo.png",
-  "ico_path": "assets/icon.ico",
+  "icon": "web/assets/logo.png",
+  "ico_path": "desktop/icons/icon.ico",
   "theme_color": "#10b981",
   "engine": "tk",
   "host": "localhost",
   "port": 5000,
   "width": 1120,
-  "height": 760
+  "height": 760,
+  "paths": {
+    "desktop_dir": "desktop",
+    "desktop_entry": "desktop/app.py",
+    "desktop_icons_dir": "desktop/icons",
+    "desktop_shortcuts_dir": "desktop/shortcuts",
+    "web_dir": "web",
+    "web_entry": "web/app.py",
+    "assets_dir": "web/assets",
+    "components_dir": "web/components",
+    "models_dir": "web/models",
+    "stores_dir": "web/stores",
+    "plugins_dir": "web/plugins"
+  }
 }

@@ -16,5 +16,6 @@ EXPOSE 5000
 # Define environment variable
 ENV NAME World
 
-# Run webapp.py when the container launches
-CMD ["python", "./webapp.py"]
+# Run web/app.py when the container launches
+CMD ["python", "web/app.py"]
+

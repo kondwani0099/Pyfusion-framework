@@ -15,8 +15,8 @@ PAGE_HTML_TEMPLATE = """<!DOCTYPE html>
     <title>{title} - PyFusion</title>
     <link href="https://cdn.jsdelivr.net/npm/daisyui@4.5.0/dist/full.min.css" rel="stylesheet" type="text/css" />
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="/styles.css">
-    <link rel="stylesheet" href="/{name}.css">
+    <link rel="stylesheet" href="/assets/styles.css">
+    <link rel="stylesheet" href="/assets/{name}.css">
 </head>
 <body class="bg-base-300 text-base-content min-h-screen flex flex-col">
     <div class="navbar bg-base-100 shadow-sm">
@@ -42,7 +42,7 @@ PAGE_HTML_TEMPLATE = """<!DOCTYPE html>
 </html>
 """
 
-PAGE_CSS_TEMPLATE = """/* web/{name}.css */
+PAGE_CSS_TEMPLATE = """/* web/assets/{name}.css */
 h1 {{
     color: #10b981;
 }}
@@ -214,18 +214,21 @@ def _run_with_reloader(host, port, open_browser):
 
 
 def _load_user_app():
+    from .config import resolve_web_entry
+
     app = default_app
-    if os.path.exists("webapp.py"):
+    web_entry = resolve_web_entry()
+    if os.path.exists(web_entry):
         try:
             import importlib.util
 
-            spec = importlib.util.spec_from_file_location("webapp", "webapp.py")
+            spec = importlib.util.spec_from_file_location("web_app", web_entry)
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
             if hasattr(module, "app"):
                 app = module.app
         except Exception as exc:
-            print(f"[PyFusion] Note: Could not auto-import webapp.py ({exc})")
+            print(f"[PyFusion] Note: Could not auto-import {web_entry} ({exc})")
     return app
 
 
@@ -305,17 +308,23 @@ def cmd_run(args):
 
 
 def cmd_create(args):
+    from .config import load_project_config
+
+    cfg = load_project_config()
+    paths = cfg.get("paths", {})
     resource = args.resource
     raw_name = args.name.strip()
 
     if resource == "page":
         name = raw_name.lower().replace(".html", "")
         title = name.replace("_", " ").replace("-", " ").title()
-        web_dir = os.path.abspath("web")
+        web_dir = os.path.abspath(paths.get("web_dir", "web"))
+        assets_dir = os.path.abspath(paths.get("assets_dir", "web/assets"))
         os.makedirs(web_dir, exist_ok=True)
+        os.makedirs(assets_dir, exist_ok=True)
 
         html_path = os.path.join(web_dir, f"{name}.html")
-        css_path = os.path.join(web_dir, f"{name}.css")
+        css_path = os.path.join(assets_dir, f"{name}.css")
 
         if os.path.exists(html_path) and not args.force:
             print(f"[PyFusion] Error: Page '{html_path}' already exists. Use --force to overwrite.")
@@ -335,7 +344,7 @@ def cmd_create(args):
     elif resource == "component":
         comp_name = raw_name.replace(".fusion", "")
         comp_name = comp_name[0].upper() + comp_name[1:] if comp_name else "MyComponent"
-        comp_dir = os.path.abspath("components")
+        comp_dir = os.path.abspath(paths.get("components_dir", "web/components"))
         os.makedirs(comp_dir, exist_ok=True)
 
         comp_path = os.path.join(comp_dir, f"{comp_name}.fusion")
@@ -346,14 +355,14 @@ def cmd_create(args):
         with open(comp_path, "w", encoding="utf-8") as f:
             f.write(SFC_COMPONENT_TEMPLATE.format(component_name=comp_name))
 
-        print(f"[PyFusion] Created Single-File Component (.fusion):")
+        print(f"[PyFusion] Created Single-File Component (.fusion) in web/components/:")
         print(f"  - {comp_path}")
 
     elif resource == "model":
         clean = raw_name.replace("_model", "").replace(".py", "")
         class_name = "".join(part.capitalize() for part in clean.split("_"))
         table_name = clean.lower() + "s"
-        models_dir = os.path.abspath("models")
+        models_dir = os.path.abspath(paths.get("models_dir", "web/models"))
         os.makedirs(models_dir, exist_ok=True)
 
         model_path = os.path.join(models_dir, f"{clean.lower()}_model.py")
@@ -364,12 +373,12 @@ def cmd_create(args):
         with open(model_path, "w", encoding="utf-8") as f:
             f.write(MODEL_TEMPLATE.format(class_name=class_name, table_name=table_name))
 
-        print(f"[PyFusion] Created Database ORM Model:")
+        print(f"[PyFusion] Created Database ORM Model in web/models/:")
         print(f"  - {model_path} (Table: '{table_name}')")
 
     elif resource == "store":
         store_name = raw_name.lower().replace("_store", "").replace(".py", "")
-        stores_dir = os.path.abspath("stores")
+        stores_dir = os.path.abspath(paths.get("stores_dir", "web/stores"))
         os.makedirs(stores_dir, exist_ok=True)
 
         store_path = os.path.join(stores_dir, f"{store_name}_store.py")
@@ -380,13 +389,13 @@ def cmd_create(args):
         with open(store_path, "w", encoding="utf-8") as f:
             f.write(STORE_TEMPLATE.format(name=store_name))
 
-        print(f"[PyFusion] Created reactive store:")
+        print(f"[PyFusion] Created reactive store in web/stores/:")
         print(f"  - {store_path}")
 
     elif resource == "plugin":
         plugin_name = raw_name.lower().replace("_plugin", "").replace(".py", "")
         class_name = "".join(part.capitalize() for part in plugin_name.split("_")) + "Plugin"
-        plugins_dir = os.path.abspath("plugins")
+        plugins_dir = os.path.abspath(paths.get("plugins_dir", "web/plugins"))
         os.makedirs(plugins_dir, exist_ok=True)
 
         plugin_path = os.path.join(plugins_dir, f"{plugin_name}_plugin.py")
@@ -397,7 +406,7 @@ def cmd_create(args):
         with open(plugin_path, "w", encoding="utf-8") as f:
             f.write(PLUGIN_TEMPLATE.format(name=plugin_name, class_name=class_name))
 
-        print(f"[PyFusion] Created plugin:")
+        print(f"[PyFusion] Created plugin in web/plugins/:")
         print(f"  - {plugin_path}")
 
 
@@ -417,6 +426,8 @@ def cmd_db(args):
 
 
 def cmd_init(args):
+    from .config import save_project_config
+
     project_name = args.project_name.strip()
     target_dir = os.path.abspath(project_name)
 
@@ -424,25 +435,54 @@ def cmd_init(args):
         print(f"[PyFusion] Error: Directory '{target_dir}' already exists and is not empty.")
         sys.exit(1)
 
-    for folder in ("web", "components", "models", "stores", "plugins", "assets"):
+    for folder in (
+        "desktop/icons",
+        "desktop/shortcuts",
+        "web/assets",
+        "web/components",
+        "web/models",
+        "web/stores",
+        "web/plugins",
+    ):
         os.makedirs(os.path.join(target_dir, folder), exist_ok=True)
+
+    # Root config outside folders
+    save_project_config({"project_name": project_name, "app_title": project_name}, base_dir=target_dir)
 
     with open(os.path.join(target_dir, "web", "index.html"), "w", encoding="utf-8") as f:
         f.write(PAGE_HTML_TEMPLATE.format(name="index", title=project_name))
 
-    with open(os.path.join(target_dir, "web", "styles.css"), "w", encoding="utf-8") as f:
+    with open(os.path.join(target_dir, "web", "assets", "styles.css"), "w", encoding="utf-8") as f:
         f.write("body { font-family: 'Poppins', sans-serif; }\n")
 
-    with open(os.path.join(target_dir, "components", "Counter.fusion"), "w", encoding="utf-8") as f:
+    with open(os.path.join(target_dir, "web", "components", "Counter.fusion"), "w", encoding="utf-8") as f:
         f.write(SFC_COMPONENT_TEMPLATE.format(component_name="Counter"))
 
-    with open(os.path.join(target_dir, "webapp.py"), "w", encoding="utf-8") as f:
+    with open(os.path.join(target_dir, "web", "app.py"), "w", encoding="utf-8") as f:
         f.write(INIT_APP_TEMPLATE.format(project_name=project_name))
 
+    with open(os.path.join(target_dir, "desktop", "app.py"), "w", encoding="utf-8") as f:
+        f.write(
+            'import os, sys\n'
+            'PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))\n'
+            'os.chdir(PROJECT_ROOT)\n'
+            'if PROJECT_ROOT not in sys.path:\n'
+            '    sys.path.insert(0, PROJECT_ROOT)\n'
+            'from fusionlib.gui_framework import HTMLAppWindow\n\n'
+            'if __name__ == "__main__":\n'
+            '    HTMLAppWindow()\n'
+        )
+
     print(f"[PyFusion] Initialized Vue-style PyFusion project in '{target_dir}'!")
+    print("  - pyfusion.json         (Root Project Config)")
+    print("  - desktop/app.py        (Desktop Application)")
+    print("  - web/app.py            (Web Server & Routes)")
+    print("  - web/assets/           (Static CSS, Images, Icons)")
+    print("  - web/components/       (Single-File Components .fusion)")
     print(f"\nNext steps:")
     print(f"  cd {project_name}")
     print(f"  pyfusion run web --open --reload")
+    print(f"  pyfusion run desktop")
 
 
 def cmd_routes(args):
@@ -474,13 +514,20 @@ def cmd_routes(args):
 
 
 def cmd_info(args):
+    from .config import load_project_config
+
     app = _load_user_app()
+    cfg = load_project_config()
+    paths = cfg.get("paths", {})
     print(f"PyFusion Framework v{VERSION} (Vue-Reactive + OWASP Hardened + SQLite ORM)")
     print(f"Python Version : {sys.version.split()[0]}")
-    print(f"Working Dir    : {os.getcwd()}")
-    print(f"Components     : {', '.join(app.components.keys()) if app.components else 'None'}")
+    print(f"Root Config    : {os.path.abspath('pyfusion.json')}")
+    print(f"Desktop Folder : {os.path.abspath(paths.get('desktop_dir', 'desktop'))} (entry: {paths.get('desktop_entry', 'desktop/app.py')})")
+    print(f"Web Folder     : {os.path.abspath(paths.get('web_dir', 'web'))} (entry: {paths.get('web_entry', 'web/app.py')})")
+    print(f"Web Assets     : {os.path.abspath(paths.get('assets_dir', 'web/assets'))}")
+    print(f"Web Components : {os.path.abspath(paths.get('components_dir', 'web/components'))} ({', '.join(app.components.keys()) if app.components else 'None'})")
     print(f"Database       : {'Connected (' + app.db.db_url + ')' if getattr(app, 'db', None) else 'Ready (FusionDB)'}")
-    web_dir = os.path.abspath("web")
+    web_dir = os.path.abspath(paths.get("web_dir", "web"))
     if os.path.exists(web_dir):
         pages = [f for f in os.listdir(web_dir) if f.endswith(".html")]
         print(f"Static Pages   : {', '.join(pages) if pages else 'None'}")

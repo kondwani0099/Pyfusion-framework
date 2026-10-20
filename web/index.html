@@ -8,9 +8,9 @@
     <title>PyFusion Framework — Reactive Web, Database ORM & OWASP Security</title>
     <link href="https://cdn.jsdelivr.net/npm/daisyui@4.5.0/dist/full.min.css" rel="stylesheet" type="text/css" />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap">
-    <link rel="icon" type="image/png" href="/logo.png">
+    <link rel="icon" type="image/png" href="/assets/logo.png">
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/assets/styles.css">
 </head>
 
 <body class="bg-base-300 text-base-content min-h-screen flex flex-col">
@@ -85,7 +85,7 @@
         <section id="section-overview" class="tab-section space-y-12">
             <div class="hero-glow rounded-3xl p-8 md:p-12 border border-base-content/10 bg-base-100/60 shadow-2xl text-center">
                 <div class="max-w-3xl mx-auto flex flex-col items-center">
-                    <img src="/logo.png" alt="PyFusion WebFramework by Kondwani Nyirenda" class="w-32 h-32 md:w-40 md:h-40 object-contain logo-pulse mb-6">
+                    <img src="/assets/logo.png" alt="PyFusion WebFramework by Kondwani Nyirenda" class="w-32 h-32 md:w-40 md:h-40 object-contain logo-pulse mb-6">
 
                     <div class="flex flex-wrap justify-center gap-2 mb-4">
                         <span class="px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold">
@@ -176,7 +176,7 @@
                 <span class="badge badge-success badge-outline mb-2">Live Python ↔ Browser Reactivity</span>
                 <h2 class="text-3xl font-bold">Vue-Style Single-File Component Playground</h2>
                 <p class="text-sm opacity-75 mt-2">
-                    Powered by <code>components/Counter.fusion</code>. Clicking <strong>+1</strong> or <strong>-1</strong> invokes Python methods via <code>/_pyfusion/rpc</code> (protected by CSRF + method allowlisting).
+                    Powered by <code>web/components/Counter.fusion</code>. Clicking <strong>+1</strong> or <strong>-1</strong> invokes Python methods via <code>/_pyfusion/rpc</code> (protected by CSRF + method allowlisting).
                 </p>
             </div>
 
@@ -229,7 +229,7 @@
 
                 <div class="code-window p-5 shadow-xl text-xs overflow-x-auto">
                     <div class="flex items-center justify-between pb-3 mb-3 border-b border-slate-700">
-                        <span class="font-semibold text-emerald-400">components/Counter.fusion</span>
+                        <span class="font-semibold text-emerald-400">web/components/Counter.fusion</span>
                         <a href="/counter" class="btn btn-xs btn-outline border-slate-600 text-slate-200">Open Full Page ↗</a>
                     </div>
 <pre class="leading-relaxed"><code>&lt;template&gt;
@@ -364,10 +364,10 @@ def increment(self):
                 <div class="card-body">
                     <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
                         <div class="flex items-center gap-3">
-                            <img src="/logo.png" alt="Project Icon" class="w-10 h-10 object-contain rounded-lg bg-base-200 p-1" />
+                            <img src="/assets/logo.png" alt="Project Icon" class="w-10 h-10 object-contain rounded-lg bg-base-200 p-1" />
                             <div>
                                 <h3 class="card-title text-lg">⚙️ Project Name, Icon &amp; Save Desktop App</h3>
-                                <p class="text-xs opacity-70">Persists to <code>pyfusion.json</code> and generates <code>assets/icon.ico</code> for Windows shortcuts &amp; <code>.exe</code> builds</p>
+                                <p class="text-xs opacity-70">Persists to root <code>pyfusion.json</code> and generates <code>desktop/icons/icon.ico</code> &amp; <code>desktop/shortcuts/</code></p>
                             </div>
                         </div>
                         <span id="project-cfg-badge" class="badge badge-success badge-outline">Synced with pyfusion.json</span>
@@ -380,18 +380,18 @@ def increment(self):
                         </div>
                         <div class="form-control">
                             <label class="label"><span class="label-text text-xs font-semibold">Desktop Window &amp; Shortcut Title</span></label>
-                            <input type="text" id="cfg-app-title" value="Lapansi Industries — PyFusion" class="input input-bordered input-sm w-full" />
+                            <input type="text" id="cfg-app-title" value="Uniplexity AI - PyFusion" class="input input-bordered input-sm w-full" />
                         </div>
                         <div class="form-control">
                             <label class="label"><span class="label-text text-xs font-semibold">Project Icon Path (.png or .ico)</span></label>
-                            <input type="text" id="cfg-icon-path" value="web/logo.png" class="input input-bordered input-sm w-full" />
+                            <input type="text" id="cfg-icon-path" value="web/assets/logo.png" class="input input-bordered input-sm w-full" />
                         </div>
                     </div>
 
                     <div class="card-actions justify-end mt-4 gap-2">
                         <button onclick="saveProjectSettings()" class="btn btn-sm btn-outline">💾 Save Name &amp; Icon</button>
                         <button onclick="saveDesktopShortcutFromWeb()" class="btn btn-sm bg-emerald-600 hover:bg-emerald-500 text-white border-none">
-                            🖥️ Save Desktop App Shortcut (.lnk &amp; .bat)
+                            🖥️ Save Desktop App Shortcut (.lnk)
                         </button>
                     </div>
                 </div>

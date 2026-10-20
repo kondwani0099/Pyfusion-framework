@@ -134,8 +134,14 @@ class PyFusionApp:
             self.web_dir = os.path.abspath(web_dir)
 
         if components_dir is None:
-            default_comp = os.path.abspath(os.path.join(os.path.dirname(__file__), "../components"))
-            self.components_dir = default_comp if os.path.exists(default_comp) else os.path.abspath("components")
+            web_comp = os.path.join(self.web_dir, "components")
+            legacy_comp = os.path.abspath(os.path.join(os.path.dirname(__file__), "../components"))
+            if os.path.exists(web_comp):
+                self.components_dir = web_comp
+            elif os.path.exists(legacy_comp):
+                self.components_dir = legacy_comp
+            else:
+                self.components_dir = web_comp
         else:
             self.components_dir = os.path.abspath(components_dir)
 
@@ -360,8 +366,9 @@ class PyFusionApp:
                 "status": "ok",
                 "framework": "PyFusion",
                 "project_name": cfg.get("project_name", "PyFusion-Studio"),
-                "app_title": cfg.get("app_title", "Lapansi Industries — PyFusion"),
-                "icon": cfg.get("icon", "web/logo.png"),
+                "app_title": cfg.get("app_title", "Uniplexity AI - PyFusion"),
+                "icon": cfg.get("icon", "web/assets/logo.png"),
+                "paths": cfg.get("paths", {}),
                 "live_reload": True,
                 "owasp_hardened": True,
                 "database_connected": self.db is not None,
@@ -532,6 +539,13 @@ class CustomHandler(SimpleHTTPRequestHandler):
             candidate = os.path.join(self.directory, parsed_path.lstrip("/") + ".html")
             if os.path.isfile(candidate):
                 parsed_path = parsed_path + ".html"
+                self.path = parsed_path
+        elif parsed_path != "/" and not parsed_path.startswith("/assets/"):
+            # Fallback to web/assets/<file> when requesting /logo.png, /styles.css, etc.
+            direct_candidate = os.path.join(self.directory, parsed_path.lstrip("/"))
+            assets_candidate = os.path.join(self.directory, "assets", parsed_path.lstrip("/"))
+            if not os.path.isfile(direct_candidate) and os.path.isfile(assets_candidate):
+                parsed_path = "/assets/" + parsed_path.lstrip("/")
                 self.path = parsed_path
 
         # OWASP A01 Path Traversal & Sensitive File Protection

@@ -49,7 +49,7 @@ class AppBar(tk.Frame):
         candidates = []
         if icon_path:
             candidates.append(icon_path)
-        candidates.extend(["web/logo.png", "assets/icon.ico"])
+        candidates.extend(["web/assets/logo.png", "desktop/icons/logo.png", "desktop/icons/icon.ico", "web/logo.png", "assets/icon.ico"])
         for path in candidates:
             abs_p = path if os.path.isabs(path) else os.path.abspath(path)
             if os.path.exists(abs_p):

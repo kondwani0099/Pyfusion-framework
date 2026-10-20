@@ -15,31 +15,45 @@ PyFusion is an open-source, **Vue.js-inspired** Python framework designed for th
 ![Alt Text](screenshots/app(3).png)
 
 
-## Folder structure 
-```markdown
-pyfusion/
-|-- assets/
-|   |-- images/
-|-- components/
-|   |-- Counter.fusion
-|-- fusionlib/
-|   |-- __init__.py
-|   |-- __main__.py
-|   |-- cli.py
-|   |-- component.py
-|   |-- gui_framework.py
-|   |-- navigation_manager.py
-|   |-- reactivity.py
-|   |-- ui_components.py
-|   |-- web_server.py
-|-- web/
-|   |-- index.html
-|   |-- form.html
-|   |-- styles.css
-|-- pyfusion.py
-|-- pyproject.toml
-|-- webapp.py
-|-- desktop_app.py
+## Folder Structure
+```text
+pyfusion-framework/
+├── pyfusion.json             # Root Project Config (name, title, icon, folder paths)
+├── pyproject.toml            # Package & CLI configuration
+├── requirements.txt          # Python dependencies
+├── pyfusion.py               # CLI entry script
+├── desktop/                  # Desktop Application Folder
+│   ├── app.py                # Desktop GUI entry point
+│   ├── icons/                # Compiled Windows .ico & desktop icons
+│   │   ├── icon.ico
+│   │   └── logo.png
+│   └── shortcuts/            # Generated .lnk shortcuts & windowless .vbs launchers
+├── web/                      # Web Application Folder
+│   ├── app.py                # Web server & routes entry point
+│   ├── index.html            # Main web landing page
+│   ├── form.html             # Form / demo page
+│   ├── assets/               # Static web assets (logo.png, styles.css, images)
+│   │   ├── logo.png
+│   │   └── styles.css
+│   ├── components/           # Vue-style Single-File Components (.fusion)
+│   │   └── Counter.fusion
+│   ├── models/               # SQLite ORM models
+│   ├── stores/               # Reactive state stores
+│   └── plugins/              # Reusable plugins
+└── fusionlib/                # Core PyFusion Framework engine
+    ├── __init__.py
+    ├── __main__.py
+    ├── cli.py
+    ├── component.py
+    ├── config.py
+    ├── database.py
+    ├── gui_framework.py
+    ├── modern_ui.py
+    ├── navigation_manager.py
+    ├── reactivity.py
+    ├── security.py
+    ├── ui_components.py
+    └── web_server.py
 ```
 
 ## Getting Started
@@ -65,29 +79,32 @@ pyfusion/
 Run commands with `pyfusion` (or `python pyfusion.py` / `python -m fusionlib`):
 
 ```bash
-# Scaffold a Vue-style Single-File Component (components/UserCard.fusion)
+# Scaffold a Vue-style Single-File Component (web/components/UserCard.fusion)
 pyfusion create component UserCard
 
-# Scaffold a Pinia/Vuex-style reactive store (stores/cart_store.py)
+# Scaffold a Database ORM Model (web/models/product_model.py)
+pyfusion create model Product
+
+# Scaffold a Pinia/Vuex-style reactive store (web/stores/cart_store.py)
 pyfusion create store cart
 
-# Scaffold a reusable PyFusion plugin (plugins/auth_plugin.py)
+# Scaffold a reusable PyFusion plugin (web/plugins/auth_plugin.py)
 pyfusion create plugin auth
 
-# Scaffold a static web page (web/dashboard.html & web/dashboard.css)
+# Scaffold a static web page (web/dashboard.html & web/assets/dashboard.css)
 pyfusion create page dashboard
 
-# Initialize a brand-new PyFusion project folder
-pyfusion init my_new_app
+# Configure project name, desktop title, and custom icon in root pyfusion.json
+pyfusion config --name "MyProject" --title "My Desktop App" --icon "web/assets/logo.png"
+
+# Save a windowless Desktop App shortcut (.lnk) in desktop/shortcuts/ & Windows Desktop
+pyfusion build shortcut
 
 # Run the web server with live-reload (watches .py, .fusion, .html, .css)
 pyfusion run web --port 5000 --reload --open
 
-# Run the desktop GUI application
-pyfusion run desktop --page index --title "My PyFusion App"
-
-# Run both web server and desktop GUI simultaneously
-pyfusion run dev --port 5000
+# Run the windowless desktop GUI application (desktop/app.py)
+pyfusion run desktop
 
 # Inspect all registered routes, reactive components, and static pages
 pyfusion routes
@@ -97,7 +114,7 @@ pyfusion routes
 
 ## Building on Top of PyFusion (Vue.js Style)
 
-### 1. Single-File Components (`components/Counter.fusion`)
+### 1. Single-File Components (`web/components/Counter.fusion`)
 Just like `.vue` files in Vue.js, `.fusion` files encapsulate HTML template, Python reactive logic, and scoped CSS:
 
 ```html

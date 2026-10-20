@@ -51,13 +51,19 @@ build/
 env/
 .venv/
 assets/.webview_data/
+desktop/.webview_data/
+desktop/dist/
 
 # Exclude local machine shortcuts and launchers
 *.lnk
 Launch *.vbs
 Launch *.bat
+desktop/shortcuts/*.lnk
+desktop/shortcuts/*.vbs
+desktop/shortcuts/*.bat
 
 # Exclude compiled JavaScript files
 node_modules/
 dist/
+
 

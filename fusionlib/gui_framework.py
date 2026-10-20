@@ -11,6 +11,7 @@ from .config import (
     create_desktop_shortcut,
     ensure_project_ico,
     load_project_config,
+    resolve_web_entry,
     save_project_config,
 )
 from .modern_ui import WebBadge, WebButton, WebCard, WebInput, WebStatCard, WebTheme, apply_ttk_web_styles
@@ -97,12 +98,12 @@ class HTMLAppWindow:
         self.project_name = cfg.get("project_name", "PyFusion-Studio")
         self.app_name = app_name or cfg.get("app_title") or self.project_name
         self.app_color = app_color or cfg.get("theme_color", "#10b981")
-        self.icon_path = icon_path or cfg.get("icon", "web/logo.png")
-        self.web_dir = web_dir
+        self.icon_path = icon_path or cfg.get("icon", "web/assets/logo.png")
+        self.web_dir = web_dir or cfg.get("paths", {}).get("web_dir", "web")
         self.width = width or int(cfg.get("width", 1120))
         self.height = height or int(cfg.get("height", 760))
         self.port = port or int(cfg.get("port", 5000))
-        self.engine = engine or cfg.get("engine", "auto")
+        self.engine = engine or cfg.get("engine", "tk")
         self._custom_html = html_content
         self._css_styles = css_styles
 
@@ -153,11 +154,12 @@ class HTMLAppWindow:
         host = "localhost"
         if not _is_port_open(host, self.port):
             app = default_app
-            if os.path.exists("webapp.py"):
+            web_entry = resolve_web_entry()
+            if os.path.exists(web_entry):
                 try:
                     import importlib.util
 
-                    spec = importlib.util.spec_from_file_location("webapp", "webapp.py")
+                    spec = importlib.util.spec_from_file_location("web_app", web_entry)
                     mod = importlib.util.module_from_spec(spec)
                     spec.loader.exec_module(mod)
                     if hasattr(mod, "app"):
@@ -194,7 +196,7 @@ class HTMLAppWindow:
                     pass
 
         win.events.shown += _apply_native_icon
-        storage_dir = os.path.abspath(os.path.join("assets", ".webview_data"))
+        storage_dir = os.path.abspath(os.path.join("desktop", ".webview_data"))
         os.makedirs(storage_dir, exist_ok=True)
         webview.start(private_mode=False, storage_path=storage_dir)
 
@@ -285,7 +287,7 @@ class HTMLAppWindow:
 
         tk.Label(
             title_col,
-            text=f"AUTHOR: {cfg.get('author', 'Kondwani Nyirenda').upper()}   •   ICON: {cfg.get('icon', 'web/logo.png')}",
+            text=f"AUTHOR: {cfg.get('author', 'Kondwani Nyirenda').upper()}   •   DESKTOP: desktop/app.py   •   WEB: web/app.py",
             font=(WebTheme.FONT_SANS, 9, "bold"),
             bg=WebTheme.BG_BASE_200,
             fg=WebTheme.EMERALD,
@@ -350,7 +352,7 @@ class HTMLAppWindow:
         author_inp = WebInput(form_grid, label="Author / Organization", default_value=cfg.get("author", "Kondwani Nyirenda"))
         author_inp.grid(row=1, column=0, sticky="ew", padx=(0, 10), pady=6)
 
-        icon_inp = WebInput(form_grid, label="App Icon Path (.png or .ico — auto-converts to assets/icon.ico)", default_value=cfg.get("icon", "web/logo.png"))
+        icon_inp = WebInput(form_grid, label="App Icon Path (.png or .ico — auto-converts to desktop/icons/icon.ico)", default_value=cfg.get("icon", "web/assets/logo.png"))
         icon_inp.grid(row=1, column=1, sticky="ew", padx=(10, 0), pady=6)
 
         def browse_icon():
@@ -365,7 +367,7 @@ class HTMLAppWindow:
                 except ValueError:
                     icon_inp.set(chosen)
 
-        log_var = tk.StringVar(value=f"Current Icon: {cfg.get('icon')}  ->  Generated Windows Icon: {self.ico_path or 'assets/icon.ico'}")
+        log_var = tk.StringVar(value=f"Current Icon: {cfg.get('icon')}  ->  Generated Windows Icon: {self.ico_path or 'desktop/icons/icon.ico'}")
         log_lbl = tk.Label(card.body, textvariable=log_var, font=(WebTheme.FONT_MONO, 9), bg=WebTheme.BG_BASE_200, fg=WebTheme.EMERALD, padx=12, pady=10, anchor="w")
         log_lbl.pack(fill=tk.X, pady=(6, 16))
 
@@ -374,7 +376,7 @@ class HTMLAppWindow:
                 "project_name": proj_name_inp.get().strip() or "PyFusion-App",
                 "app_title": app_title_inp.get().strip() or "PyFusion Desktop",
                 "author": author_inp.get().strip() or "Kondwani Nyirenda",
-                "icon": icon_inp.get().strip() or "web/logo.png",
+                "icon": icon_inp.get().strip() or "web/assets/logo.png",
             })
             self.project_name = new_cfg["project_name"]
             self.app_name = new_cfg["app_title"]
@@ -415,7 +417,9 @@ class HTMLAppWindow:
         self._clear_workspace()
         from .component import load_sfc
 
-        sfc_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../components/Counter.fusion"))
+        sfc_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../web/components/Counter.fusion"))
+        if not os.path.exists(sfc_path):
+            sfc_path = os.path.abspath("web/components/Counter.fusion")
         comp_cls = load_sfc(sfc_path, "Counter") if os.path.exists(sfc_path) else None
         instance = comp_cls() if comp_cls else None
 
