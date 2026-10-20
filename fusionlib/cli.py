@@ -12,8 +12,7 @@ PAGE_HTML_TEMPLATE = """<!DOCTYPE html>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{title} - PyFusion</title>
-    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.5.0/dist/full.min.css" rel="stylesheet" type="text/css" />
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/_pyfusion/pyfusion.css">
     <link rel="stylesheet" href="/assets/styles.css">
     <link rel="stylesheet" href="/assets/{name}.css">
 </head>
@@ -172,7 +171,7 @@ def _iter_watched_files(base_dir):
                 yield os.path.join(root, f)
 
 
-def _run_with_reloader(host, port, open_browser):
+def _run_with_reloader(host, port, open_browser, server="auto"):
     """Run web server in a subprocess and restart it whenever Python files change (HTML/CSS/.fusion reload live in browser)."""
     print(f"[PyFusion] Starting server with Browser + Backend Live-Reload on http://{host}:{port} ...")
     base_dir = os.getcwd()
@@ -187,7 +186,7 @@ def _run_with_reloader(host, port, open_browser):
                     pass
         return mtimes
 
-    cmd = [sys.executable, "-m", "fusionlib", "run", "web", "--host", host, "--port", str(port)]
+    cmd = [sys.executable, "-m", "fusionlib", "run", "web", "--host", host, "--port", str(port), "--server", server]
     if open_browser:
         cmd.append("--open")
 
@@ -236,17 +235,18 @@ def _load_user_app():
 
 def cmd_run(args):
     mode = args.mode
+    server = getattr(args, "server", "auto")
     if getattr(args, "production", False):
         # Must be set before the user's app module is imported so PyFusionApp() resolves production mode.
         os.environ["PYFUSION_ENV"] = "production"
         default_app.debug = False
     if mode == "web":
         if args.reload and not getattr(args, "production", False):
-            _run_with_reloader(args.host, args.port, args.open)
+            _run_with_reloader(args.host, args.port, args.open, server=server)
             return
 
         app = _load_user_app()
-        run_web_server(port=args.port, host=args.host, app=app, open_browser=args.open)
+        run_web_server(port=args.port, host=args.host, app=app, open_browser=args.open, server=server)
 
     elif mode == "desktop":
         if not getattr(args, "foreground", False):
@@ -488,6 +488,12 @@ def cmd_init(args):
     with open(os.path.join(target_dir, "web", "assets", "styles.css"), "w", encoding="utf-8") as f:
         f.write("body { font-family: 'Poppins', sans-serif; }\n")
 
+    bundled_css = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "pyfusion.css")
+    if os.path.isfile(bundled_css):
+        import shutil
+
+        shutil.copyfile(bundled_css, os.path.join(target_dir, "web", "assets", "app.css"))
+
     with open(os.path.join(target_dir, "web", "components", "Counter.fusion"), "w", encoding="utf-8") as f:
         f.write(SFC_COMPONENT_TEMPLATE.format(component_name="Counter"))
 
@@ -632,6 +638,38 @@ def cmd_build(args):
     if updates:
         save_project_config(updates)
 
+    if args.target == "css":
+        import shutil
+
+        npx = shutil.which("npx")
+        if not npx:
+            bundled = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "pyfusion.css")
+            out_css = os.path.abspath(os.path.join("web", "assets", "app.css"))
+            os.makedirs(os.path.dirname(out_css), exist_ok=True)
+            if os.path.isfile(bundled):
+                shutil.copyfile(bundled, out_css)
+                print(f"[PyFusion CSS] Node/npx not found; copied precompiled bundle to {out_css}")
+                return
+            print("[PyFusion CSS] Error: Node.js (npx) is required to compile custom Tailwind CSS.")
+            sys.exit(1)
+
+        input_css = os.path.join("web", "assets", "tailwind.input.css")
+        output_css = os.path.join("web", "assets", "app.css")
+        os.makedirs(os.path.dirname(output_css), exist_ok=True)
+        if not os.path.exists(input_css):
+            with open(input_css, "w", encoding="utf-8") as f:
+                f.write("@tailwind base;\n@tailwind components;\n@tailwind utilities;\n")
+        cmd = [npx, "tailwindcss", "-i", input_css, "-o", output_css]
+        if os.path.exists("tailwind.config.js"):
+            cmd[2:2] = ["-c", "tailwind.config.js"]
+        if getattr(args, "watch", False):
+            cmd.append("--watch")
+        else:
+            cmd.append("--minify")
+        subprocess.run(cmd, check=True)
+        print(f"[PyFusion CSS] Compiled Tailwind + daisyUI bundle -> {os.path.abspath(output_css)}")
+        return
+
     ensure_project_ico()
     if args.target == "exe":
         dist_exe = build_standalone_exe(onefile=True)
@@ -683,6 +721,12 @@ def build_parser():
         action="store_true",
         help="Run in production mode (no live-reload, generic errors, requires PYFUSION_SECRET_KEY)",
     )
+    run_parser.add_argument(
+        "--server",
+        default="auto",
+        choices=["auto", "uvicorn", "stdlib"],
+        help="HTTP transport backend: 'auto' (uvicorn ASGI + WebSockets when installed, else stdlib), 'uvicorn', or 'stdlib'",
+    )
     run_parser.add_argument("--page", default="index", help="Initial HTML page name for desktop mode (default: index)")
     run_parser.add_argument("--title", default=None, help="Window title for desktop/mobile mode (defaults to pyfusion.json)")
     run_parser.add_argument("--color", default=None, help="AppBar accent color for desktop mode")
@@ -709,17 +753,22 @@ def build_parser():
     config_parser.add_argument("--color", help="Set theme accent color (e.g. #10b981)")
     config_parser.set_defaults(func=cmd_config)
 
-    # pyfusion build [shortcut|exe|android|apk|aab]
+    # pyfusion build [shortcut|exe|android|apk|aab|css]
     build_parser_sub = subparsers.add_parser(
         "build",
-        help="Save Desktop shortcut (.lnk), build standalone Windows .exe, or build Android .apk / .aab",
+        help="Build compiled CSS bundle, save Desktop shortcut (.lnk), build standalone Windows .exe, or build Android .apk / .aab",
     )
     build_parser_sub.add_argument(
         "target",
         nargs="?",
         default="shortcut",
-        choices=["shortcut", "exe", "android", "apk", "aab"],
-        help="'shortcut' (Desktop .lnk), 'exe' (Windows .exe), 'apk' (Android direct install), 'aab' (Google Play Store bundle), or 'android' (both)",
+        choices=["shortcut", "exe", "android", "apk", "aab", "css"],
+        help="'css' (Tailwind + daisyUI bundle), 'shortcut' (Desktop .lnk), 'exe' (Windows .exe), 'apk', 'aab', or 'android' (both)",
+    )
+    build_parser_sub.add_argument(
+        "--watch",
+        action="store_true",
+        help="Watch templates and rebuild CSS automatically when target is 'css'",
     )
     build_parser_sub.add_argument(
         "--format",

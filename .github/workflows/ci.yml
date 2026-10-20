@@ -41,16 +41,30 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install test dependencies
-        # The core test suite only needs the standard library plus pytest. GUI dependencies (pywebview/Pillow)
+        # The core test suite needs pytest, uvicorn, and websockets. GUI dependencies (pywebview/Pillow)
         # are not required for the web/security tests and are skipped to keep CI fast and headless.
-        run: python -m pip install --upgrade pip "pytest>=8" "pytest-cov>=5"
+        run: python -m pip install --upgrade pip "pytest>=8" "pytest-cov>=5" "uvicorn>=0.30" "websockets>=12"
       - name: Run tests
         env:
           PYFUSION_SECRET_KEY: ci-test-secret-key-0123456789abcdef0123456789abcdef
         run: python -m pytest --cov=fusionlib --cov-report=term-missing
 
+  css-bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - name: Verify compiled Tailwind + daisyUI CSS bundle
+        run: |
+          npm ci
+          npm run build:css
+          test -s web/assets/app.css
+
   build:
-    needs: test
+    needs: [test, css-bundle]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

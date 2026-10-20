@@ -30,13 +30,13 @@
         </p>
 
         <div class="flex flex-wrap items-center justify-center gap-3">
-          <button onclick="switchTab('playground')" class="btn bg-emerald-600 hover:bg-emerald-500 text-white border-none px-6">
+          <button data-tab="playground" class="btn bg-emerald-600 hover:bg-emerald-500 text-white border-none px-6">
             ⚡ Live Reactive Playground
           </button>
-          <button onclick="switchTab('form')" class="btn btn-outline px-6">
+          <button data-tab="form" class="btn btn-outline px-6">
             🗄️ Test Database &amp; Form
           </button>
-          <button onclick="switchTab('security')" class="btn btn-ghost bg-base-200/80 px-5">
+          <button data-tab="security" class="btn btn-ghost bg-base-200/80 px-5">
             🛡️ OWASP Security &amp; CLI
           </button>
         </div>
@@ -45,7 +45,7 @@
 
     <!-- 4 Pillar Cards -->
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-      <div class="card bg-base-100 border border-base-content/10 shadow-lg glass-card cursor-pointer" onclick="switchTab('playground')">
+      <div class="card bg-base-100 border border-base-content/10 shadow-lg glass-card cursor-pointer" data-tab="playground">
         <div class="card-body p-6">
           <div class="text-2xl mb-1">🧩</div>
           <h3 class="card-title text-base">Vue-Style Components</h3>
@@ -55,7 +55,7 @@
         </div>
       </div>
 
-      <div class="card bg-base-100 border border-base-content/10 shadow-lg glass-card cursor-pointer" onclick="switchTab('form')">
+      <div class="card bg-base-100 border border-base-content/10 shadow-lg glass-card cursor-pointer" data-tab="form">
         <div class="card-body p-6">
           <div class="text-2xl mb-1">🗄️</div>
           <h3 class="card-title text-base">Zero-Config Database ORM</h3>
@@ -65,7 +65,7 @@
         </div>
       </div>
 
-      <div class="card bg-base-100 border border-base-content/10 shadow-lg glass-card cursor-pointer" onclick="switchTab('security')">
+      <div class="card bg-base-100 border border-base-content/10 shadow-lg glass-card cursor-pointer" data-tab="security">
         <div class="card-body p-6">
           <div class="text-2xl mb-1">🛡️</div>
           <h3 class="card-title text-base">OWASP Top 10 Hardened</h3>
@@ -75,7 +75,7 @@
         </div>
       </div>
 
-      <div class="card bg-base-100 border border-base-content/10 shadow-lg glass-card cursor-pointer" onclick="switchTab('security')">
+      <div class="card bg-base-100 border border-base-content/10 shadow-lg glass-card cursor-pointer" data-tab="security">
         <div class="card-body p-6">
           <div class="text-2xl mb-1">🔄</div>
           <h3 class="card-title text-base">Instant Browser Reload</h3>

@@ -1,5 +1,6 @@
-"""End-to-end tests against a real PyFusion HTTP server bound to an ephemeral port."""
+"""End-to-end tests against real PyFusion HTTP & WebSocket servers (both stdlib and uvicorn ASGI backends)."""
 
+import asyncio
 import html
 import json
 import re
@@ -8,6 +9,7 @@ import urllib.request
 
 import pytest
 
+from fusionlib.security import DEFAULT_CSP, STRICT_CSP, SecurityConfig
 from fusionlib.web_server import create_app, run_web_server
 
 
@@ -39,20 +41,29 @@ class Client:
         return status, resp_headers, payload
 
 
-def _start(project_dir, debug=True):
+def _start(project_dir, debug=True, backend="stdlib", security_config=None):
     app = create_app(
         web_dir=str(project_dir / "web"),
         components_dir=str(project_dir / "web" / "components"),
         debug=debug,
+        security_config=security_config,
     )
-    httpd = run_web_server(port=0, host="127.0.0.1", app=app, in_thread=True)
+    httpd = run_web_server(port=0, host="127.0.0.1", app=app, in_thread=True, server=backend)
     return app, httpd, Client(f"http://127.0.0.1:{httpd.server_address[1]}")
 
 
-@pytest.fixture()
-def server(project_dir):
-    app, httpd, client = _start(project_dir)
+@pytest.fixture(params=["stdlib", "uvicorn"])
+def server(project_dir, request):
+    app, httpd, client = _start(project_dir, backend=request.param)
     yield app, client
+    httpd.shutdown()
+    httpd.server_close()
+
+
+@pytest.fixture()
+def asgi_server(project_dir):
+    app, httpd, client = _start(project_dir, backend="uvicorn")
+    yield app, httpd, client
     httpd.shutdown()
     httpd.server_close()
 
@@ -73,10 +84,20 @@ def test_security_headers_and_csrf_cookie(server):
     _, client = server
     headers, page = _load_index(client)
     assert "Content-Security-Policy" in headers
+    csp = headers["Content-Security-Policy"]
+    assert "script-src 'self'" in csp
+    assert "'unsafe-eval'" not in csp
+    assert "'unsafe-inline'" not in csp.split("style-src")[0]
     assert headers["X-Frame-Options"] == "SAMEORIGIN"
     assert "pyfusion_csrf" in client.cookies
     # Hidden token auto-injected into POST forms, matching the cookie
     assert f'name="csrf_token" value="{client.cookies["pyfusion_csrf"]}"' in page
+
+
+def test_strict_csp_policy():
+    assert "'unsafe-eval'" not in DEFAULT_CSP
+    assert "'unsafe-eval'" not in STRICT_CSP
+    assert "'unsafe-inline'" not in STRICT_CSP
 
 
 def test_post_without_csrf_is_rejected(server):
@@ -103,8 +124,14 @@ def test_rpc_happy_path_and_snapshot_rotation(server):
     _, page = _load_index(client)
     snapshot, checksum = _component_snapshot(page)
     token = client.cookies["pyfusion_csrf"]
-    payload = {"component_id": "Counter", "method": "increment", "args": [], "snapshot": snapshot,
-               "checksum": checksum, "updates": {}}
+    payload = {
+        "component_id": "Counter",
+        "method": "increment",
+        "args": [],
+        "snapshot": snapshot,
+        "checksum": checksum,
+        "updates": {},
+    }
     status, _, body = client.request("POST", "/_pyfusion/rpc", json_body=payload, headers={"X-CSRF-Token": token})
     assert status == 200, body
     data = json.loads(body)
@@ -122,7 +149,8 @@ def test_rpc_rejects_tampered_snapshot(server):
     tampered = snapshot.replace('"count":0', '"count":1000000')
     assert tampered != snapshot
     status, _, body = client.request(
-        "POST", "/_pyfusion/rpc",
+        "POST",
+        "/_pyfusion/rpc",
         json_body={"component_id": "Counter", "method": "increment", "snapshot": tampered, "checksum": checksum},
         headers={"X-CSRF-Token": client.cookies["pyfusion_csrf"]},
     )
@@ -137,8 +165,12 @@ def test_rpc_rejects_locked_update_and_private_method(server):
     hdrs = {"X-CSRF-Token": client.cookies["pyfusion_csrf"]}
     base = {"component_id": "Counter", "snapshot": snapshot, "checksum": checksum}
 
-    status, _, _ = client.request("POST", "/_pyfusion/rpc", headers=hdrs,
-                                  json_body={**base, "method": "increment", "updates": {"count": 500}})
+    status, _, _ = client.request(
+        "POST",
+        "/_pyfusion/rpc",
+        headers=hdrs,
+        json_body={**base, "method": "increment", "updates": {"count": 500}},
+    )
     assert status == 403
     for method in ("_private_helper", "helper_imported", "render_page"):
         status, _, _ = client.request("POST", "/_pyfusion/rpc", headers=hdrs, json_body={**base, "method": method})
@@ -150,39 +182,109 @@ def test_rpc_requires_csrf(server):
     _, page = _load_index(client)
     snapshot, checksum = _component_snapshot(page)
     status, _, _ = client.request(
-        "POST", "/_pyfusion/rpc",
+        "POST",
+        "/_pyfusion/rpc",
         json_body={"component_id": "Counter", "method": "increment", "snapshot": snapshot, "checksum": checksum},
     )
     assert status == 403
 
 
-def test_static_protection(server):
+def test_static_protection_and_bundled_css(server):
     _, client = server
     assert client.request("GET", "/secret.py")[0] == 403
     assert client.request("GET", "/components/Counter.fusion")[0] == 403
     assert client.request("GET", "/assets/")[0] == 404  # no directory listing
     assert client.request("GET", "/assets/styles.css")[0] == 200
+    status, hdrs, css = client.request("GET", "/_pyfusion/pyfusion.css")
+    assert status == 200
+    assert "text/css" in hdrs["Content-Type"]
+    assert len(css) > 10_000
 
 
 def test_service_worker_skips_cross_origin(server):
     _, client = server
     status, _, js = client.request("GET", "/sw.js")
     assert status == 200
-    # Proxying CDN requests through the worker would subject them to connect-src 'self' and break styling
     assert b"self.location.origin" in js
 
 
+def test_websocket_rpc_and_cswsh_protection(asgi_server):
+    import websockets
+    from websockets.exceptions import InvalidStatus
+
+    _, httpd, client = asgi_server
+    _, page = _load_index(client)
+    snapshot, checksum = _component_snapshot(page)
+    csrf = client.cookies["pyfusion_csrf"]
+    host, port = httpd.server_address
+    ws_base = f"ws://{host}:{port}/_pyfusion/ws"
+
+    async def _exercise():
+        # 1. Valid same-origin + CSRF handshake -> ping & RPC increment
+        async with websockets.connect(
+            f"{ws_base}?csrf={csrf}",
+            origin=f"http://{host}:{port}",
+            additional_headers={"Cookie": f"pyfusion_csrf={csrf}"},
+        ) as ws:
+            await ws.send(json.dumps({"type": "ping"}))
+            pong = json.loads(await ws.recv())
+            assert pong == {"type": "pong"}
+
+            await ws.send(
+                json.dumps(
+                    {
+                        "type": "rpc",
+                        "id": 42,
+                        "component_id": "Counter",
+                        "method": "increment",
+                        "args": [],
+                        "snapshot": snapshot,
+                        "checksum": checksum,
+                        "updates": {},
+                    }
+                )
+            )
+            res = json.loads(await ws.recv())
+            assert res["type"] == "rpc_result"
+            assert res["id"] == 42
+            assert res["status"] == 200
+            assert res["body"]["state"]["count"] == 1
+
+        # 2. Cross-origin Origin header must be rejected (CSWSH protection)
+        with pytest.raises((InvalidStatus, Exception)):
+            async with websockets.connect(
+                f"{ws_base}?csrf={csrf}",
+                origin="https://evil.example.com",
+                additional_headers={"Cookie": f"pyfusion_csrf={csrf}"},
+            ):
+                pass
+
+        # 3. Missing/mismatched CSRF token must be rejected
+        with pytest.raises((InvalidStatus, Exception)):
+            async with websockets.connect(
+                f"{ws_base}?csrf=wrong-token",
+                origin=f"http://{host}:{port}",
+                additional_headers={"Cookie": f"pyfusion_csrf={csrf}"},
+            ):
+                pass
+
+    asyncio.run(_exercise())
+
+
 def test_production_mode_hardening(project_dir):
-    app, httpd, client = _start(project_dir, debug=False)
+    app, httpd, client = _start(project_dir, debug=False, backend="uvicorn")
     try:
         assert client.request("GET", "/_pyfusion/livereload")[0] == 404
         status, _, body = client.request("GET", "/api/health")
         assert json.loads(body) == {"status": "ok"}
         status, _, js = client.request("GET", "/_pyfusion/client.js")
         assert b"const LIVERELOAD_ENABLED = false" in js
+        assert b"const WEBSOCKET_ENABLED = true" in js
         _load_index(client)
         status, _, _ = client.request(
-            "POST", "/api/project/launch-mobile", json_body={},
+            "POST",
+            "/api/project/launch-mobile",
+            json_body={},
             headers={"X-CSRF-Token": client.cookies["pyfusion_csrf"]},
         )
         assert status == 403  # developer tools disabled in production
@@ -193,7 +295,6 @@ def test_production_mode_hardening(project_dir):
 
 def test_production_requires_secret_key(project_dir, monkeypatch):
     monkeypatch.delenv("PYFUSION_SECRET_KEY", raising=False)
-    from fusionlib.security import SecurityConfig
 
     app = create_app(
         web_dir=str(project_dir / "web"),

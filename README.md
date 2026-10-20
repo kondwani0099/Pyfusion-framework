@@ -196,13 +196,14 @@ protects that round-trip by default:
 
 | Protection | How |
 |---|---|
-| **CSRF** | Signed double-submit cookie enforced on every POST/PUT/PATCH/DELETE. Tokens are auto-injected into `<form method="post">`, and `fetch()` gets `X-CSRF-Token` automatically. |
+| **CSRF & CSWSH** | Signed double-submit cookie enforced on every POST/PUT/PATCH/DELETE and on `/_pyfusion/ws` WebSocket handshakes (with `Origin`/`Host` verification). Tokens are auto-injected into `<form method="post">`. |
 | **State integrity** | Component state is an HMAC-SHA256-signed snapshot. Tampered snapshots are rejected. |
 | **Action allowlist** | Only functions you define in the component are callable from the browser. |
 | **Locked props** | `locked = {"balance", "is_admin"}`: the browser can never change these. |
 | **Local-only actions** | `@local_only` or `restrict_to_localhost = True` for actions that touch the machine. |
+| **CSP-safe runtime** | Sandboxed `SafeExpr` AST evaluator (`script-src 'self'`, no `'unsafe-eval'`, no `'unsafe-inline'`, no runtime CDN scripts). |
 | **Passwords** | PBKDF2-HMAC-SHA256 at 600k iterations, plus `password_needs_rehash()`. |
-| **Headers** | CSP, X-Frame-Options, nosniff, Referrer-Policy, Permissions-Policy, optional HSTS. |
+| **Headers** | Strict CSP, X-Frame-Options, nosniff, Referrer-Policy, Permissions-Policy, optional HSTS. |
 
 ```html
 <script>
@@ -219,12 +220,31 @@ def rebuild_icons(self):
 
 See [SECURITY.md](SECURITY.md) for the full model and how to report vulnerabilities.
 
-## Production Deployment
+## Production Deployment (ASGI / uvicorn & Compiled CSS)
+
+`pyfusion run web` automatically runs on **uvicorn (ASGI 3 + WebSockets)** when installed, falling back to
+the stdlib server (`--server stdlib`) in minimal environments. You can also expose `app.asgi` directly to
+`uvicorn`, `hypercorn`, or `gunicorn`:
 
 ```bash
 export PYFUSION_ENV=production
 export PYFUSION_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')"
+
+# Built-in CLI (uses uvicorn automatically)
 pyfusion run web --production --host 127.0.0.1 --port 5000
+
+# Or directly via uvicorn / gunicorn workers
+uvicorn web.app:app.asgi --host 127.0.0.1 --port 5000 --proxy-headers
+gunicorn -k uvicorn.workers.UvicornWorker -w 4 -b 127.0.0.1:5000 web.app:app.asgi
+```
+
+### Rebuilding the Tailwind + daisyUI CSS Bundle
+PyFusion ships a precompiled CSS bundle (`web/assets/app.css` and `/_pyfusion/pyfusion.css`) so Python-only
+users do not need Node.js. If you customize Tailwind utility classes in your templates:
+
+```bash
+pyfusion build css           # or: npm run build:css
+pyfusion build css --watch   # watch templates during development
 ```
 
 - Production mode disables live reload, hides error details and internal health data, and refuses to

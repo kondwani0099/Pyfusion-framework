@@ -6,6 +6,32 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-20
+
+### Added
+- **ASGI transport (`fusionlib.asgi.PyFusionASGI`) & uvicorn integration:** `pyfusion run web` and
+  `app.run()` automatically use `uvicorn` (ASGI 3, HTTP/1.1 keep-alive, WebSockets) when installed,
+  falling back to the zero-dependency stdlib server (`--server stdlib`). Any app can also be served
+  directly via `uvicorn web.app:app.asgi` or `gunicorn -k uvicorn.workers.UvicornWorker web.app:app.asgi`.
+- **WebSocket channel (`/_pyfusion/ws`):** low-latency component RPC over a persistent socket plus
+  push-based live reload in development mode (no polling), with automatic HTTP fallback.
+- **Cross-Site WebSocket Hijacking (CSWSH) protection:** WebSocket handshakes verify same-origin
+  `Origin`/`Host` headers, require the `?csrf=` query parameter to match the signed `pyfusion_csrf`
+  cookie, and enforce per-IP rate limiting and message size caps.
+- **CSP-safe client expression evaluator (`SafeExpr`):** replaced `new Function` in the browser runtime
+  with a sandboxed Pratt-parser AST evaluator supporting member/optional chaining (`?.`), nullish
+  coalescing (`??`), ternaries, calls, array/object literals, and assignment/update operators (`+=`, `++`)
+  while blocking `constructor`, `__proto__`, `prototype`, and arbitrary globals.
+- **Precompiled Tailwind CSS + daisyUI bundle:** shipped precompiled CSS (`web/assets/app.css` and
+  packaged `fusionlib/static/pyfusion.css` served at `/_pyfusion/pyfusion.css`) and added
+  `pyfusion build css [--watch]`. Python-only users do not need Node.js installed.
+
+### Security
+- **Tightened default `Content-Security-Policy` (`DEFAULT_CSP`):** `script-src 'self'` with no
+  `'unsafe-eval'`, no `'unsafe-inline'`, and no third-party script CDNs. Converted all demo inline
+  `onclick` handlers to CSP-safe `data-*` event delegation. `LEGACY_CSP` remains available for apps
+  that opt into CDN scripts.
+
 ## [0.5.0] - 2026-10-20
 
 ### Security

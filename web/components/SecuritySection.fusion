@@ -105,7 +105,7 @@
           <div class="text-xs opacity-60 mb-1">Scaffold a Database ORM Model</div>
           <code class="text-sm font-bold text-emerald-400">pyfusion create model Product</code>
         </div>
-        <button onclick="copyCommand('pyfusion create model Product')" class="btn btn-sm btn-outline">Copy</button>
+        <button data-copy="pyfusion create model Product" class="btn btn-sm btn-outline">Copy</button>
       </div>
 
       <div class="card bg-base-100 border border-base-content/10 shadow p-5 flex flex-row items-center justify-between gap-4">
@@ -113,7 +113,7 @@
           <div class="text-xs opacity-60 mb-1">Check or Auto-Migrate Database Tables</div>
           <code class="text-sm font-bold text-indigo-400">pyfusion db migrate</code>
         </div>
-        <button onclick="copyCommand('pyfusion db migrate')" class="btn btn-sm btn-outline">Copy</button>
+        <button data-copy="pyfusion db migrate" class="btn btn-sm btn-outline">Copy</button>
       </div>
 
       <div class="card bg-base-100 border border-base-content/10 shadow p-5 flex flex-row items-center justify-between gap-4">
@@ -121,7 +121,7 @@
           <div class="text-xs opacity-60 mb-1">Create a Vue-style Single-File Component (.fusion)</div>
           <code class="text-sm font-bold text-emerald-400">pyfusion create component UserCard</code>
         </div>
-        <button onclick="copyCommand('pyfusion create component UserCard')" class="btn btn-sm btn-outline">Copy</button>
+        <button data-copy="pyfusion create component UserCard" class="btn btn-sm btn-outline">Copy</button>
       </div>
 
       <div class="card bg-base-100 border border-base-content/10 shadow p-5 flex flex-row items-center justify-between gap-4">
@@ -129,7 +129,7 @@
           <div class="text-xs opacity-60 mb-1">Build Android APK &amp; Play Store AAB</div>
           <code class="text-sm font-bold text-amber-400">pyfusion build android --format both</code>
         </div>
-        <button onclick="copyCommand('pyfusion build android --format both')" class="btn btn-sm btn-outline">Copy</button>
+        <button data-copy="pyfusion build android --format both" class="btn btn-sm btn-outline">Copy</button>
       </div>
     </div>
   </section>

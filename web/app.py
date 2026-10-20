@@ -95,8 +95,7 @@ def handle_form_submission(request):
     return (
         f"<!DOCTYPE html><html data-theme='dark'><head><meta charset='utf-8'>"
         f"<title>Saved to Database — PyFusion</title>"
-        f"<link href='https://cdn.jsdelivr.net/npm/daisyui@4.5.0/dist/full.min.css' rel='stylesheet' />"
-        f"<script src='https://cdn.tailwindcss.com'></script>"
+        f"<link rel='stylesheet' href='/assets/app.css'>"
         f"</head><body class='min-h-screen flex items-center justify-center bg-base-300 text-base-content p-6'>"
         f"<div class='card bg-base-100 border border-base-content/10 shadow-2xl p-8 text-center max-w-md w-full'>"
         f"<div class='w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto mb-4 text-2xl'>✓</div>"

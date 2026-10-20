@@ -28,26 +28,39 @@ from typing import Any, Dict, Optional, Tuple
 PBKDF2_DEFAULT_ITERATIONS = 600_000
 
 # Default Content-Security-Policy.
-# Compatible with the bundled demo (Tailwind Play CDN, daisyUI, Google Fonts, inline handlers and the
-# expression-evaluating client runtime). It still blocks plugins, base-tag hijacking, cross-origin
-# form posts, clickjacking and cross-origin XHR/fetch exfiltration.
+# Enforces `script-src 'self'` (no 'unsafe-inline', no 'unsafe-eval', no third-party script CDNs),
+# backed by the precompiled Tailwind + daisyUI stylesheet and the CSP-safe SafeExpr runtime.
 DEFAULT_CSP = (
     "default-src 'self'; "
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com https://cdn.jsdelivr.net; "
-    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; "
+    "script-src 'self'; "
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
     "font-src 'self' data: https://fonts.gstatic.com; "
     "img-src 'self' data: blob: https:; "
-    "connect-src 'self'; "
+    "connect-src 'self' ws: wss:; "
     "object-src 'none'; "
     "base-uri 'self'; "
     "form-action 'self'; "
     "frame-ancestors 'self'"
 )
 
-# Strict policy for apps that ship compiled CSS and no inline scripts/handlers.
+# Legacy policy for applications that still load Tailwind Play CDN or inline event handlers.
+LEGACY_CSP = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com https://cdn.jsdelivr.net; "
+    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; "
+    "font-src 'self' data: https://fonts.gstatic.com; "
+    "img-src 'self' data: blob: https:; "
+    "connect-src 'self' ws: wss:; "
+    "object-src 'none'; "
+    "base-uri 'self'; "
+    "form-action 'self'; "
+    "frame-ancestors 'self'"
+)
+
+# Strict policy for apps that ship compiled CSS and no inline <style> blocks.
 STRICT_CSP = (
     "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
-    "connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+    "connect-src 'self' ws: wss:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 )
 
 

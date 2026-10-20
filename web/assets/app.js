@@ -71,6 +71,27 @@ async function checkServerHealth() {
     }
 }
 
+// CSP-safe event delegation (no inline onclick handlers required)
+document.addEventListener('click', (e) => {
+    const tabEl = e.target.closest('[data-tab]');
+    if (tabEl) {
+        if (tabEl.tagName === 'A') e.preventDefault();
+        switchTab(tabEl.getAttribute('data-tab'));
+        return;
+    }
+    const actionEl = e.target.closest('[data-action]');
+    if (actionEl) {
+        const action = actionEl.getAttribute('data-action');
+        if (action === 'health') checkServerHealth();
+        else if (action === 'toggle-theme') toggleTheme();
+        return;
+    }
+    const copyEl = e.target.closest('[data-copy]');
+    if (copyEl) {
+        copyCommand(copyEl.getAttribute('data-copy'));
+    }
+});
+
 if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js').catch(() => {});
 }

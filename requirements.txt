@@ -6,3 +6,5 @@ pywebview>=5.0.0
 requests>=2.31.0
 tkhtmlview>=0.2.0
 urllib3>=2.1.0
+uvicorn>=0.30.0
+websockets>=12.0

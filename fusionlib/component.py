@@ -58,8 +58,406 @@ def local_only(fn: Callable) -> Callable:
 
 CLIENT_RUNTIME_JS = r"""
 (function () {
+  // ---------------------------------------------------------------------------------------------
+  // SafeExpr: CSP-safe template expression evaluator (no dynamic code generation; works without
+  // 'unsafe-eval'). Supports literals, identifiers, member access (. ?. []), calls, unary
+  // (! - + typeof), arithmetic/comparison/logical operators, ternaries, array/object literals,
+  // assignments (= += -= *= /= %=) and ';'-separated statements. Prototype-related properties are
+  // blocked and only a small allowlist of globals is reachable.
+  // ---------------------------------------------------------------------------------------------
+  const SafeExpr = (function () {
+    const BLOCKED_PROPS = new Set([
+      'constructor', 'prototype', '__proto__', '__defineGetter__', '__defineSetter__',
+      '__lookupGetter__', '__lookupSetter__'
+    ]);
+    const GLOBALS = Object.freeze({
+      Math: Math,
+      JSON: Object.freeze({ stringify: JSON.stringify, parse: JSON.parse }),
+      Number: Number,
+      String: String,
+      Boolean: Boolean,
+      parseInt: parseInt,
+      parseFloat: parseFloat,
+      isNaN: isNaN,
+      isFinite: isFinite,
+      Array: Object.freeze({ isArray: Array.isArray }),
+      Object: Object.freeze({ keys: Object.keys, values: Object.values, entries: Object.entries }),
+      NaN: NaN,
+      Infinity: Infinity
+    });
+    const PUNCT = ['===', '!==', '**=', '++', '--', '?.', '??', '==', '!=', '<=', '>=', '&&', '||', '+=', '-=', '*=', '/=', '%=', '**',
+      '(', ')', '[', ']', '{', '}', '.', ',', '?', ':', ';', '+', '-', '*', '/', '%', '!', '<', '>', '='];
+    const BINARY = { '??': 4, '||': 4, '&&': 5, '==': 8, '!=': 8, '===': 8, '!==': 8, '<': 9, '>': 9, '<=': 9, '>=': 9,
+      '+': 11, '-': 11, '*': 12, '/': 12, '%': 12, '**': 13 };
+    const ASSIGN = new Set(['=', '+=', '-=', '*=', '/=', '%=', '**=']);
+    const ESCAPES = { n: '\n', t: '\t', r: '\r', b: '\b', f: '\f', v: '\v', '0': '\0' };
+    const cache = new Map();
+
+    function tokenize(src) {
+      const toks = [];
+      let i = 0;
+      while (i < src.length) {
+        const c = src[i];
+        if (/\s/.test(c)) { i++; continue; }
+        if (/[0-9]/.test(c) || (c === '.' && /[0-9]/.test(src[i + 1] || ''))) {
+          const m = /^(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?/.exec(src.slice(i));
+          toks.push({ t: 'num', v: parseFloat(m[0]) });
+          i += m[0].length;
+          continue;
+        }
+        if (c === '"' || c === "'" || c === '`') {
+          let j = i + 1;
+          let out = '';
+          while (j < src.length && src[j] !== c) {
+            if (src[j] === '\\') {
+              const n = src[j + 1];
+              out += Object.prototype.hasOwnProperty.call(ESCAPES, n) ? ESCAPES[n] : n;
+              j += 2;
+            } else {
+              if (c === '`' && src[j] === '$' && src[j + 1] === '{') throw new SyntaxError('Template interpolation is not supported');
+              out += src[j++];
+            }
+          }
+          if (j >= src.length) throw new SyntaxError('Unterminated string');
+          toks.push({ t: 'str', v: out });
+          i = j + 1;
+          continue;
+        }
+        if (/[A-Za-z_$]/.test(c)) {
+          const m = /^[A-Za-z_$][\w$]*/.exec(src.slice(i));
+          toks.push({ t: 'id', v: m[0] });
+          i += m[0].length;
+          continue;
+        }
+        const p = PUNCT.find((op) => src.startsWith(op, i));
+        if (!p) throw new SyntaxError('Unexpected character ' + c);
+        // `a?.5:1` is a ternary, not optional chaining
+        if (p === '?.' && /[0-9]/.test(src[i + 2] || '')) { toks.push({ t: 'p', v: '?' }); i += 1; continue; }
+        toks.push({ t: 'p', v: p });
+        i += p.length;
+      }
+      return toks;
+    }
+
+    function parse(src) {
+      const toks = tokenize(String(src));
+      let pos = 0;
+      const peek = () => toks[pos];
+      const isP = (v) => toks[pos] && toks[pos].t === 'p' && toks[pos].v === v;
+      const expect = (v) => { if (!isP(v)) throw new SyntaxError('Expected ' + v); pos++; };
+
+      function parseExpr(minPrec) {
+        let left = parseUnary();
+        for (;;) {
+          const t = peek();
+          if (!t || t.t !== 'p') break;
+          if (ASSIGN.has(t.v)) {
+            if (minPrec > 2) break;
+            if (left.type !== 'id' && left.type !== 'member') throw new SyntaxError('Invalid assignment target');
+            pos++;
+            left = { type: 'assign', op: t.v, target: left, value: parseExpr(2) };
+            continue;
+          }
+          if (t.v === '?') {
+            if (minPrec > 3) break;
+            pos++;
+            const consequent = parseExpr(2);
+            expect(':');
+            left = { type: 'cond', test: left, consequent, alternate: parseExpr(3) };
+            continue;
+          }
+          const prec = BINARY[t.v];
+          if (prec === undefined || prec < minPrec) break;
+          pos++;
+          const right = parseExpr(t.v === '**' ? prec : prec + 1);
+          const logical = t.v === '&&' || t.v === '||' || t.v === '??';
+          left = { type: logical ? 'logical' : 'binary', op: t.v, left, right };
+        }
+        return left;
+      }
+
+      function parseUnary() {
+        const t = peek();
+        if (t && t.t === 'p' && (t.v === '++' || t.v === '--')) {
+          pos++;
+          const target = parseUnary();
+          if (target.type !== 'id' && target.type !== 'member') throw new SyntaxError('Invalid update target');
+          return { type: 'update', op: t.v, prefix: true, target };
+        }
+        if (t && t.t === 'p' && (t.v === '!' || t.v === '-' || t.v === '+')) {
+          pos++;
+          return { type: 'unary', op: t.v, arg: parseUnary() };
+        }
+        if (t && t.t === 'id' && t.v === 'typeof') {
+          pos++;
+          return { type: 'unary', op: 'typeof', arg: parseUnary() };
+        }
+        return parsePostfix(parsePrimary());
+      }
+
+      function parseArgs() {
+        const args = [];
+        while (!isP(')')) {
+          args.push(parseExpr(2));
+          if (!isP(')')) expect(',');
+        }
+        expect(')');
+        return args;
+      }
+
+      function parsePostfix(node) {
+        for (;;) {
+          if (isP('.') || isP('?.')) {
+            const optional = peek().v === '?.';
+            pos++;
+            if (optional && isP('(')) { pos++; node = { type: 'call', callee: node, args: parseArgs(), optional: true }; continue; }
+            if (optional && isP('[')) { pos++; const prop = parseExpr(0); expect(']'); node = { type: 'member', object: node, prop, computed: true, optional: true }; continue; }
+            const name = toks[pos++];
+            if (!name || name.t !== 'id') throw new SyntaxError('Expected property name');
+            node = { type: 'member', object: node, prop: name.v, computed: false, optional };
+          } else if (isP('[')) {
+            pos++;
+            const prop = parseExpr(0);
+            expect(']');
+            node = { type: 'member', object: node, prop, computed: true, optional: false };
+          } else if (isP('(')) {
+            pos++;
+            node = { type: 'call', callee: node, args: parseArgs(), optional: false };
+          } else if ((isP('++') || isP('--')) && (node.type === 'id' || node.type === 'member')) {
+            node = { type: 'update', op: toks[pos++].v, prefix: false, target: node };
+          } else {
+            return node;
+          }
+        }
+      }
+
+      function parsePrimary() {
+        const t = toks[pos++];
+        if (!t) throw new SyntaxError('Unexpected end of expression');
+        if (t.t === 'num' || t.t === 'str') return { type: 'lit', value: t.v };
+        if (t.t === 'id') {
+          if (t.v === 'true') return { type: 'lit', value: true };
+          if (t.v === 'false') return { type: 'lit', value: false };
+          if (t.v === 'null') return { type: 'lit', value: null };
+          if (t.v === 'undefined') return { type: 'lit', value: undefined };
+          return { type: 'id', name: t.v };
+        }
+        if (t.v === '(') { const e = parseExpr(0); expect(')'); return e; }
+        if (t.v === '[') {
+          const items = [];
+          while (!isP(']')) { items.push(parseExpr(2)); if (!isP(']')) expect(','); }
+          expect(']');
+          return { type: 'array', items };
+        }
+        if (t.v === '{') {
+          const props = [];
+          while (!isP('}')) {
+            const k = toks[pos++];
+            if (!k || (k.t !== 'id' && k.t !== 'str' && k.t !== 'num')) throw new SyntaxError('Invalid object key');
+            if (isP(':')) { pos++; props.push([String(k.v), parseExpr(2)]); }
+            else if (k.t === 'id') props.push([k.v, { type: 'id', name: k.v }]);
+            else throw new SyntaxError('Expected :');
+            if (!isP('}')) expect(',');
+          }
+          expect('}');
+          return { type: 'object', props };
+        }
+        throw new SyntaxError('Unexpected token ' + t.v);
+      }
+
+      const body = [];
+      while (pos < toks.length) {
+        if (isP(';')) { pos++; continue; }
+        body.push(parseExpr(0));
+        if (pos < toks.length && !isP(';')) throw new SyntaxError('Unexpected token ' + peek().v);
+      }
+      if (body.length === 0) return { type: 'lit', value: undefined };
+      return body.length === 1 ? body[0] : { type: 'seq', body };
+    }
+
+    function compile(src) {
+      const key = String(src);
+      let ast = cache.get(key);
+      if (!ast) {
+        ast = parse(key);
+        if (cache.size > 1000) cache.clear();
+        cache.set(key, ast);
+      }
+      return ast;
+    }
+
+    function propKey(p) {
+      const k = typeof p === 'symbol' ? p : String(p);
+      if (typeof k === 'string' && (BLOCKED_PROPS.has(k) || k.startsWith('__'))) {
+        throw new Error('Access to property "' + k + '" is not allowed');
+      }
+      return k;
+    }
+
+    function memberKey(node, scope) {
+      return propKey(node.computed ? evaluate(node.prop, scope) : node.prop);
+    }
+
+    function guardFn(fn) {
+      if (typeof fn !== 'function') throw new TypeError('Not a function');
+      if (fn === Function || fn === setTimeout || fn === setInterval) throw new Error('Function not allowed');
+      return fn;
+    }
+
+    function evaluate(node, scope) {
+      switch (node.type) {
+        case 'lit': return node.value;
+        case 'id': return scope.get(node.name);
+        case 'array': return node.items.map((n) => evaluate(n, scope));
+        case 'object': {
+          const out = {};
+          node.props.forEach(([k, v]) => { out[propKey(k)] = evaluate(v, scope); });
+          return out;
+        }
+        case 'member': {
+          const obj = evaluate(node.object, scope);
+          if (obj === null || obj === undefined) {
+            if (node.optional) return undefined;
+            throw new TypeError('Cannot read properties of ' + obj);
+          }
+          return obj[memberKey(node, scope)];
+        }
+        case 'call': {
+          let fn;
+          let thisArg;
+          if (node.callee.type === 'member') {
+            thisArg = evaluate(node.callee.object, scope);
+            if (thisArg === null || thisArg === undefined) {
+              if (node.callee.optional || node.optional) return undefined;
+              throw new TypeError('Cannot read properties of ' + thisArg);
+            }
+            fn = thisArg[memberKey(node.callee, scope)];
+          } else {
+            fn = evaluate(node.callee, scope);
+          }
+          if ((fn === null || fn === undefined) && node.optional) return undefined;
+          return guardFn(fn).apply(thisArg, node.args.map((a) => evaluate(a, scope)));
+        }
+        case 'unary': {
+          if (node.op === 'typeof') {
+            if (node.arg.type === 'id' && !scope.has(node.arg.name)) return 'undefined';
+            return typeof evaluate(node.arg, scope);
+          }
+          const v = evaluate(node.arg, scope);
+          if (node.op === '!') return !v;
+          if (node.op === '-') return -v;
+          return +v;
+        }
+        case 'logical': {
+          const l = evaluate(node.left, scope);
+          if (node.op === '&&') return l ? evaluate(node.right, scope) : l;
+          if (node.op === '||') return l ? l : evaluate(node.right, scope);
+          return l !== null && l !== undefined ? l : evaluate(node.right, scope);
+        }
+        case 'binary': return applyBinary(node.op, evaluate(node.left, scope), evaluate(node.right, scope));
+        case 'cond': return evaluate(node.test, scope) ? evaluate(node.consequent, scope) : evaluate(node.alternate, scope);
+        case 'assign': {
+          let value = evaluate(node.value, scope);
+          const t = node.target;
+          if (t.type === 'id') {
+            if (node.op !== '=') value = applyBinary(node.op.slice(0, -1), scope.get(t.name), value);
+            scope.set(t.name, value);
+            return value;
+          }
+          const obj = evaluate(t.object, scope);
+          if (obj === null || obj === undefined) throw new TypeError('Cannot set properties of ' + obj);
+          const k = memberKey(t, scope);
+          if (node.op !== '=') value = applyBinary(node.op.slice(0, -1), obj[k], value);
+          obj[k] = value;
+          return value;
+        }
+        case 'seq': {
+          let r;
+          node.body.forEach((n) => { r = evaluate(n, scope); });
+          return r;
+        }
+        case 'update': {
+          const t = node.target;
+          const delta = node.op === '++' ? 1 : -1;
+          let oldVal;
+          let newVal;
+          if (t.type === 'id') {
+            oldVal = Number(scope.get(t.name));
+            newVal = oldVal + delta;
+            scope.set(t.name, newVal);
+          } else {
+            const obj = evaluate(t.object, scope);
+            if (obj === null || obj === undefined) throw new TypeError('Cannot set properties of ' + obj);
+            const k = memberKey(t, scope);
+            oldVal = Number(obj[k]);
+            newVal = oldVal + delta;
+            obj[k] = newVal;
+          }
+          return node.prefix ? newVal : oldVal;
+        }
+        default: throw new Error('Unknown node ' + node.type);
+      }
+    }
+
+    function applyBinary(op, a, b) {
+      switch (op) {
+        case '+': return a + b;
+        case '-': return a - b;
+        case '*': return a * b;
+        case '/': return a / b;
+        case '%': return a % b;
+        case '**': return a ** b;
+        case '==': return a == b; // eslint-disable-line eqeqeq
+        case '!=': return a != b; // eslint-disable-line eqeqeq
+        case '===': return a === b;
+        case '!==': return a !== b;
+        case '<': return a < b;
+        case '>': return a > b;
+        case '<=': return a <= b;
+        case '>=': return a >= b;
+        default: throw new Error('Unknown operator ' + op);
+      }
+    }
+
+    const hasOwn = (o, k) => o !== null && o !== undefined && Object.prototype.hasOwnProperty.call(o, k);
+
+    // Scope resolution order: extra (loop variables) -> state -> safe globals.
+    function makeScope(state, extra) {
+      return {
+        has: (name) => hasOwn(extra, name) || hasOwn(state, name) || hasOwn(GLOBALS, name),
+        get(name) {
+          if (hasOwn(extra, name)) return extra[name];
+          if (hasOwn(state, name)) return state[name];
+          if (hasOwn(GLOBALS, name)) return GLOBALS[name];
+          return undefined;
+        },
+        set(name, value) {
+          propKey(name);
+          if (hasOwn(extra, name)) extra[name] = value;
+          else state[name] = value;
+        }
+      };
+    }
+
+    return {
+      parse: compile,
+      evaluate: (src, scope) => evaluate(typeof src === 'string' ? compile(src) : src, scope),
+      run: (src, vars, extra) => evaluate(compile(src), makeScope(vars || {}, extra || {})),
+      makeScope,
+      hasOwn,
+      GLOBALS
+    };
+  })();
+
+  // Non-browser environments (e.g. Node-based unit tests) only get the evaluator.
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    globalThis.PyFusionSafeExpr = SafeExpr;
+    return;
+  }
+
   if (window.PyFusion && window.PyFusion.__loaded) return;
   const LIVERELOAD_ENABLED = __PYFUSION_LIVERELOAD__;
+  const WEBSOCKET_ENABLED = __PYFUSION_WEBSOCKET__;
   const SAFE_METHODS = ['GET', 'HEAD', 'OPTIONS', 'TRACE'];
 
   function readCookie(name) {
@@ -105,6 +503,84 @@ CLIENT_RUNTIME_JS = r"""
   function notify(message, type) {
     if (typeof window.showToast === 'function') window.showToast(message, type);
   }
+
+  // --- WebSocket transport (ASGI/uvicorn): RPC over a persistent socket + push live reload ---
+  const Transport = {
+    ws: null,
+    seq: 0,
+    pending: new Map(),
+    failures: 0,
+    everConnected: false,
+    gaveUp: false,
+    onGiveUp: null,
+
+    connect() {
+      if (!WEBSOCKET_ENABLED || typeof WebSocket === 'undefined' || this.gaveUp) return;
+      if (this.ws && (this.ws.readyState === 0 || this.ws.readyState === 1)) return;
+      const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const url = proto + '//' + window.location.host + '/_pyfusion/ws?csrf=' + encodeURIComponent(getCsrfToken());
+      let ws;
+      try { ws = new WebSocket(url); } catch (_) { this._scheduleReconnect(); return; }
+      this.ws = ws;
+      ws.onopen = () => {
+        const isReconnect = this.everConnected;
+        this.everConnected = true;
+        this.failures = 0;
+        // The server restarted (e.g. backend reload): pull the fresh markup while keeping state.
+        if (isReconnect && LIVERELOAD_ENABLED) hotMorphReload();
+      };
+      ws.onmessage = (ev) => {
+        let msg;
+        try { msg = JSON.parse(ev.data); } catch (_) { return; }
+        if (msg.type === 'rpc_result') {
+          const waiter = this.pending.get(msg.id);
+          if (waiter) { this.pending.delete(msg.id); waiter.resolve(msg); }
+        } else if (msg.type === 'reload' && LIVERELOAD_ENABLED) {
+          console.log('[PyFusion HMR] File change detected! Hot-morphing components...');
+          hotMorphReload();
+        }
+      };
+      ws.onclose = () => {
+        if (this.ws === ws) this.ws = null;
+        this.pending.forEach((w) => w.reject(new Error('WebSocket closed')));
+        this.pending.clear();
+        this._scheduleReconnect();
+      };
+      ws.onerror = () => {};
+    },
+
+    _scheduleReconnect() {
+      this.failures += 1;
+      // Never connected after a few attempts (proxy without WebSocket support?): stay on HTTP.
+      if (!this.everConnected && this.failures >= 3) {
+        this.gaveUp = true;
+        if (typeof this.onGiveUp === 'function') this.onGiveUp();
+        return;
+      }
+      const delay = Math.min(10000, 300 * Math.pow(2, Math.min(this.failures, 6)));
+      setTimeout(() => this.connect(), delay);
+    },
+
+    // Resolves with {status, body} over the socket, or null when the socket is unavailable.
+    rpc(payload) {
+      const ws = this.ws;
+      if (!ws || ws.readyState !== 1) return Promise.resolve(null);
+      const id = ++this.seq;
+      return new Promise((resolve, reject) => {
+        this.pending.set(id, { resolve, reject });
+        try {
+          ws.send(JSON.stringify(Object.assign({ type: 'rpc', id }, payload)));
+        } catch (err) {
+          this.pending.delete(id);
+          resolve(null);
+          return;
+        }
+        setTimeout(() => {
+          if (this.pending.has(id)) { this.pending.delete(id); reject(new Error('RPC timeout')); }
+        }, 30000);
+      }).catch(() => null);
+    }
+  };
 
   class PyFusionInstance {
     constructor(rootEl, componentId, snapshot, checksum, computedKeys, overrides) {
@@ -152,18 +628,15 @@ CLIENT_RUNTIME_JS = r"""
       });
     }
 
+    _scope(extraScope) {
+      return SafeExpr.makeScope(this.state, extraScope || {});
+    }
+
     _evalInScope(expr, extraScope) {
       try {
-        const scope = Object.assign({}, this.state, extraScope || {});
-        const trimmed = String(expr || '').trim();
-        if (Object.prototype.hasOwnProperty.call(scope, trimmed)) {
-          return scope[trimmed];
-        }
-        const keys = Object.keys(scope);
-        const vals = keys.map((k) => scope[k]);
-        const fn = new Function(...keys, `return (${trimmed});`);
-        return fn(...vals);
+        return SafeExpr.evaluate(String(expr || '').trim(), this._scope(extraScope));
       } catch (e) {
+        if (LIVERELOAD_ENABLED) console.warn('[PyFusion] Expression error in "' + expr + '":', e.message);
         return '';
       }
     }
@@ -183,33 +656,42 @@ CLIENT_RUNTIME_JS = r"""
 
     async callServer(methodName, args, eventPayload, isRetry) {
       try {
-        const headers = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
-        const csrf = getCsrfToken();
-        if (csrf) headers['X-CSRF-Token'] = csrf;
+        const payload = {
+          component_id: this.componentId,
+          method: methodName,
+          args: args || [],
+          snapshot: this.snapshot,
+          checksum: this.checksum,
+          updates: this._collectUpdates(),
+          event: eventPayload || {}
+        };
 
-        const res = await fetch('/_pyfusion/rpc', {
-          method: 'POST',
-          headers,
-          credentials: 'same-origin',
-          body: JSON.stringify({
-            component_id: this.componentId,
-            method: methodName,
-            args: args || [],
-            snapshot: this.snapshot,
-            checksum: this.checksum,
-            updates: this._collectUpdates(),
-            event: eventPayload || {}
-          })
-        });
+        let status;
         let data = null;
-        try { data = await res.json(); } catch (_) { data = null; }
+        const viaSocket = await Transport.rpc(payload);
+        if (viaSocket) {
+          status = viaSocket.status;
+          data = viaSocket.body;
+        } else {
+          const headers = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
+          const csrf = getCsrfToken();
+          if (csrf) headers['X-CSRF-Token'] = csrf;
+          const res = await fetch('/_pyfusion/rpc', {
+            method: 'POST',
+            headers,
+            credentials: 'same-origin',
+            body: JSON.stringify(payload)
+          });
+          status = res.status;
+          try { data = await res.json(); } catch (_) { data = null; }
+        }
 
-        if (!res.ok) {
+        if (status < 200 || status >= 300) {
           // The server rotates an invalid/expired CSRF cookie on failure; retry once with the fresh token.
-          if (res.status === 403 && data && data.code === 'csrf_failed' && !isRetry) {
+          if (status === 403 && data && data.code === 'csrf_failed' && !isRetry) {
             return this.callServer(methodName, args, eventPayload, true);
           }
-          console.warn('[PyFusion RPC]', res.status, data && data.error);
+          console.warn('[PyFusion RPC]', status, data && data.error);
           if (data && data.error) notify(data.error, 'error');
           return;
         }
@@ -266,18 +748,33 @@ CLIENT_RUNTIME_JS = r"""
 
           if (eventName) {
             const handlerExpr = attr.value.trim();
+            let ast = null;
+            try {
+              ast = SafeExpr.parse(handlerExpr);
+            } catch (err) {
+              console.warn('[PyFusion] Invalid event handler "' + handlerExpr + '":', err.message);
+            }
             el.addEventListener(eventName, (e) => {
               if (modifiers.includes('prevent')) e.preventDefault();
               if (modifiers.includes('stop')) e.stopPropagation();
+              if (!ast) return;
 
-              const match = handlerExpr.match(/^([a-zA-Z_][a-zA-Z0-9_]*)(?:\((.*)\))?$/);
-              if (match) {
-                const methodName = match[1];
-                const rawArgs = match[2] ? match[2].split(',').map((a) => this._evalInScope(a.trim(), extraScope)) : [];
-                this.callServer(methodName, rawArgs, { value: e.target ? e.target.value : null });
-              } else {
-                this._evalInScope(handlerExpr, extraScope);
-                this.render();
+              const scopeVars = Object.assign({ $event: e }, extraScope || {});
+              const scope = this._scope(scopeVars);
+              // `save` / `remove(item.id)` -> server action (unless it names a local value/function)
+              const isServerCall = (name) => !scope.has(name);
+              try {
+                if (ast.type === 'id' && isServerCall(ast.name)) {
+                  this.callServer(ast.name, [], { value: e.target ? e.target.value : null });
+                } else if (ast.type === 'call' && ast.callee.type === 'id' && isServerCall(ast.callee.name)) {
+                  const callArgs = ast.args.map((a) => SafeExpr.evaluate(a, scope));
+                  this.callServer(ast.callee.name, callArgs, { value: e.target ? e.target.value : null });
+                } else {
+                  SafeExpr.evaluate(ast, scope);
+                  this.render();
+                }
+              } catch (err) {
+                console.warn('[PyFusion] Event handler error in "' + handlerExpr + '":', err.message);
               }
             });
           }
@@ -476,7 +973,7 @@ CLIENT_RUNTIME_JS = r"""
     }
   }
 
-  function startLiveReloadWatcher() {
+  function startLiveReloadPolling() {
     if (!LIVERELOAD_ENABLED) return;
     let lastHash = null;
     setInterval(async () => {
@@ -497,11 +994,24 @@ CLIENT_RUNTIME_JS = r"""
     }, 1200);
   }
 
+  function startLiveReloadWatcher() {
+    if (WEBSOCKET_ENABLED && typeof WebSocket !== 'undefined') {
+      // Push-based: the server broadcasts {"type": "reload"} over the socket. Fall back to polling if
+      // the socket can never be established.
+      Transport.onGiveUp = startLiveReloadPolling;
+      Transport.connect();
+      return;
+    }
+    startLiveReloadPolling();
+  }
+
   window.PyFusion = {
     __loaded: true,
     instances: {},
     getCsrfToken,
     hotMorphReload,
+    SafeExpr,
+    transport: Transport,
     mountAll() {
       document.querySelectorAll('[data-pyfusion-component]').forEach((el) => {
         const id = el.getAttribute('data-pyfusion-component');
@@ -527,9 +1037,11 @@ CLIENT_RUNTIME_JS = r"""
 """
 
 
-def get_client_runtime_js(livereload: bool = False) -> str:
-    """Return the browser runtime with live-reload enabled only when requested (development mode)."""
-    return CLIENT_RUNTIME_JS.replace("__PYFUSION_LIVERELOAD__", "true" if livereload else "false")
+def get_client_runtime_js(livereload: bool = False, websocket: bool = False) -> str:
+    """Return the browser runtime with live-reload / WebSocket transport enabled only when requested."""
+    return CLIENT_RUNTIME_JS.replace("__PYFUSION_LIVERELOAD__", "true" if livereload else "false").replace(
+        "__PYFUSION_WEBSOCKET__", "true" if websocket else "false"
+    )
 
 
 class Component:
@@ -799,9 +1311,8 @@ class Component:
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     {csrf_meta}
     <title>{page_title}</title>
-    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.5.0/dist/full.min.css" rel="stylesheet" type="text/css" />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap">
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/_pyfusion/pyfusion.css">
     <link rel="stylesheet" href="/styles.css">
     {head_extra}
 </head>

@@ -1,0 +1,4 @@
+/* Source for web/assets/app.css. Rebuild with: pyfusion build css   (or: npm run build:css) */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
